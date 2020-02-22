@@ -2,14 +2,28 @@
 
 in vec2 vertex_position;
 
+out vec3 color;
+
 uniform vec2 view_plane_size;
 
-float ray_sphere_intersect(vec3 center, vec3 direction, float radius_squared) {
-    float length_squared = dot(direction, direction);
-    // project offset onto direction
+/*
+calculates the squared distance from the center of the sphere
+to the closest point on the ray
+multiplied by the length of the direction vector to the power of 4
+*/
+float sphere_offset_squared(
+    vec3 center, vec3 direction, float direction_squared
+) {
+    // project center onto direction, divisions are postponed
     vec3 closest = dot(center, direction) * direction;
-    vec3 offset = closest - center * length_squared;
-    return radius_squared * length_squared - dot(offset, offset);
+    vec3 offset = closest - center * direction_squared;
+    return dot(offset, offset);
+}
+
+// like the step function but smooth using fwidth as width
+float soft_step(float x) {
+    float width = fwidth(x);
+    return clamp(x / width + 0.5, 0, 1);
 }
 
 void main(void)
@@ -18,9 +32,19 @@ void main(void)
     // trace bounding spheres
     // repeat
 
-    float intersection = ray_sphere_intersect(
-        vec3(0, 0, 2), vec3(vertex_position * view_plane_size, 2), 1
+    vec3 center = vec3(3, 0, 2);
+    float radius_squared = 1;
+
+    vec3 direction = vec3(vertex_position * view_plane_size, 1);
+    float direction_squared = dot(direction, direction);
+
+    float offset_squared = sphere_offset_squared(
+        center, direction, direction_squared
     );
 
-    gl_FragColor = vec4(clamp(sign(intersection), 0, 1), 1, 1, 1);
+    float intersection =
+        radius_squared * direction_squared * direction_squared - offset_squared;
+
+    color = vec3(soft_step(intersection));
+    color = pow(color, vec3(1 / 2.2));
 }
