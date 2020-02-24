@@ -35,6 +35,7 @@ int main()
         throw runtime_error("Failed to initialize GLFW.");
     }
 
+    glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
     window = glfwCreateWindow(1280, 720, "IFS Tracer", nullptr, nullptr);
 
     if (!window) {
@@ -47,6 +48,8 @@ int main()
     if (glewInit() != GLEW_OK) {
         throw runtime_error("Failed to initilize GLEW.");
     }
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
 
     enum attributes : GLuint {
         position

@@ -14,41 +14,102 @@ vec3 project(vec3 point, vec3 vector) {
     return dot(point, vector) * vector;
 }
 
+struct intersection_parameters {
+    vec3 center, direction;
+    float direction_squared; // Dot product of direction with itself.
+    float radius, radius_squared;
+};
+
 /*
-Returns a positive value if the ray intersects the sphere,
+Stores the result of an intersection test.
+depth_offset_squared is positive if there is an intersection,
+otherwise it's negative.
+*/
+struct test_result {
+    /*
+    Vector from eye to closest point on the ray to the center of the sphere,
+    multiplied by direction_squared.
+    */
+    vec3 closest;
+    /*
+    Vector from the center of the sphere to the closest point on the ray,
+    multiplied by direction_squared.
+    */
+    vec3 offset;
+    float offset_squared; // Dot product of offset with itself.
+    /*
+    Squared distance between the depth of the center and the depth
+    of the intersection, multiplied by direction_squared squared.
+    */
+    float depth_offset_squared;
+};
+
+/*
+Calculates the squared difference between the depth of the center and the depth
+of the intersection, a positive value if the ray intersects the sphere,
 a negative value otherwise.
 */
-float intersect(
-    vec3 center, vec3 direction, float radius_squared, float direction_squared
+test_result test(
+    intersection_parameters p
 ) {
+    test_result r;
     // project center onto direction vector
     // devisions are postponed
-    vec3 closest = project(center, direction);
-    vec3 offset = closest - center * direction_squared;
+    r.closest = project(p.center, p.direction);
+    r.offset = r.closest - p.center * p.direction_squared;
     // distance between closest point and center
-    float offset_squared = dot(offset, offset);
-    return
-        radius_squared * direction_squared * direction_squared - offset_squared;
+    r.offset_squared = dot(r.offset, r.offset);
+    r.depth_offset_squared =
+        p.radius_squared * p.direction_squared * p.direction_squared -
+        r.offset_squared;
+    return r;
 }
 
 /*
-Returns the point of intersection between a ray and a sphere.
+
 */
-vec3 intersection(
-    vec3 center, vec3 direction, float direction_squared, float radius_squared
+struct depth_result {
+    float closest_squared; // Dot product between closest and itself.
+    /*
+    Squared depth multipled by direction_squared
+    */
+    float depth_squared;
+};
+
+/*
+Returns the squared depth of the intersection for depth test.
+Assumes test has already been used and there is an intersection.
+*/
+depth_result depth(
+    test_result t
 ) {
-    float center_squared = dot(center, center);
-    vec3 closest = project(center, direction);
-    float closest_squared = dot(closest, closest);
-    vec3 offset = closest - center * direction_squared;
-    float offset_squared = dot(offset, offset);
+    depth_result d;
+    d.closest_squared = dot(t.closest, t.closest);
 
-    float depth_offset_squared =
-        radius_squared * direction_squared * direction_squared - offset_squared;
+    float clamped_depth_offset_squared = max(t.depth_offset_squared, 0);
 
-    float depth = sqrt(closest_squared) - sqrt(max(depth_offset_squared, 0));
+    // calculating squared depth only requires one sqrt, instead of two
+    d.depth_squared =
+        -2 * sqrt(d.closest_squared * clamped_depth_offset_squared) +
+        d.closest_squared + clamped_depth_offset_squared;
 
-    return depth * direction / sqrt(direction_squared) / direction_squared;
+    return d;
+}
+
+struct intersection_result {
+    vec3 position;
+    vec3 normal;
+};
+
+intersection_result intersection (
+    intersection_parameters p, depth_result d
+) {
+    intersection_result i;
+    i.position =
+        p.direction * sqrt(d.depth_squared) /
+        (p.direction_squared * sqrt(p.direction_squared));
+    i.normal = (i.position - p.center) / p.radius;
+    return i;
 }
 
 // like the step function but smooth using fwidth as width
@@ -74,28 +135,20 @@ void main(void)
     // trace bounding spheres
     // repeat
 
-    vec3 center = vec3(-1, 0, 3);
-    float radius = 1;
-    float radius_squared = radius * radius;
+    intersection_parameters p;
+    p.center = vec3(0, 0, 3);
+    p.radius = 1;
+    p.direction = vec3(vertex_position * view_plane_size, 1);
 
-    vec3 direction = vec3(vertex_position * view_plane_size, 1);
-    float direction_squared = dot(direction, direction);
+    p.radius_squared = p.radius * p.radius;
+    p.direction_squared = dot(p.direction, p.direction);
 
-    vec3 closest = project(center, direction);
-    float closest_squared = dot(closest, closest);
-    vec3 offset = closest - center * direction_squared;
-    float offset_squared = dot(offset, offset);
+    color = vec3(0);
 
-    float depth_offset_squared =
-        radius_squared * direction_squared * direction_squared - offset_squared;
-
-    vec3 position = intersection(
-        center, direction, direction_squared, radius_squared
-    );
-    vec3 normal = (position - center) / radius;
-
-    color = vec3(soft_step(depth_offset_squared));
-    color *= phong_shading(normal, position, direction);
-
-    color = pow(color, vec3(1 / 2.2));
+    test_result t = test(p);
+    if (t.depth_offset_squared >= 0) {
+        depth_result d = depth(t);
+        intersection_result i = intersection(p, d);
+        color = vec3(phong_shading(i.normal, i.position, p.direction));
+    }
 }
