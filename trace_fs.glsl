@@ -1,10 +1,14 @@
-#version 410 core
+#version 430 core
 
 in vec2 vertex_position;
 
-out vec3 color;
+out vec3 fragment_color;
 
 uniform vec2 view_plane_size;
+
+layout(std430, row_major, binding = 1) readonly buffer MapsInverse {
+    mat4x3 maps_inverse[];
+};
 
 /*
 Calculate projection of point onto vector
@@ -15,7 +19,7 @@ vec3 project(vec3 point, vec3 vector) {
 }
 
 struct intersection_parameters {
-    vec3 center, direction;
+    vec3 origin, direction;
     float direction_squared; // Dot product of direction with itself.
     float radius, radius_squared;
 };
@@ -27,12 +31,12 @@ otherwise it's negative.
 */
 struct test_result {
     /*
-    Vector from eye to closest point on the ray to the center of the sphere,
+    Vector from the origin to point on the ray closest to the sphere center
     multiplied by direction_squared.
     */
     vec3 closest;
     /*
-    Vector from the center of the sphere to the closest point on the ray,
+    Vector from the center of the sphere to the closest point on the ray
     multiplied by direction_squared.
     */
     vec3 offset;
@@ -53,11 +57,11 @@ test_result test(
     intersection_parameters p
 ) {
     test_result r;
-    // project center onto direction vector
+    // project origin onto direction vector
     // devisions are postponed
-    r.closest = project(p.center, p.direction);
-    r.offset = r.closest - p.center * p.direction_squared;
-    // distance between closest point and center
+    r.closest = project(-p.origin, p.direction);
+    r.offset = r.closest + p.origin * p.direction_squared;
+    // distance between origin point and center
     r.offset_squared = dot(r.offset, r.offset);
     r.depth_offset_squared =
         p.radius_squared * p.direction_squared * p.direction_squared -
@@ -97,6 +101,9 @@ depth_result depth(
 }
 
 struct intersection_result {
+    /*
+    Vector from origin to intersection.
+    */
     vec3 position;
     vec3 normal;
 };
@@ -108,7 +115,7 @@ intersection_result intersection (
     i.position =
         p.direction * sqrt(d.depth_squared) /
         (p.direction_squared * sqrt(p.direction_squared));
-    i.normal = (i.position - p.center) / p.radius;
+    i.normal = (i.position + p.origin) / p.radius;
     return i;
 }
 
@@ -118,8 +125,9 @@ float soft_step(float x) {
     return clamp(x / width + 0.5, 0, 1);
 }
 
-float phong_shading(vec3 normal, vec3 position, vec3 direction) {
-    vec3 light_position = vec3(-2, 2, 0);
+float phong_shading(
+    vec3 normal, vec3 position, vec3 direction, vec3 light_position
+) {
     vec3 light_direction = normalize(light_position - position);
     vec3 reflection_direction = reflect(light_direction, normal);
     float diffuse = max(dot(light_direction, normal), 0);
@@ -136,19 +144,40 @@ void main(void)
     // repeat
 
     intersection_parameters p;
-    p.center = vec3(0, 0, 3);
-    p.radius = 1;
+    p.origin = -vec3(1, 0, 4);
+    p.radius = 0.5;
     p.direction = vec3(vertex_position * view_plane_size, 1);
 
     p.radius_squared = p.radius * p.radius;
     p.direction_squared = dot(p.direction, p.direction);
 
-    color = vec3(0);
+    float depth_squared = 10000;
 
-    test_result t = test(p);
-    if (t.depth_offset_squared >= 0) {
-        depth_result d = depth(t);
-        intersection_result i = intersection(p, d);
-        color = vec3(phong_shading(i.normal, i.position, p.direction));
+    vec3 light_position = vec3(1, 2, 3); // relative to origin
+    vec3 normal, position, direction;
+
+    for (uint m = 0; m < maps_inverse.length(); m++) {
+        mat4x3 map = maps_inverse[m];
+
+        intersection_parameters p2 = p;
+        p2.origin = map * vec4(p.origin, 1);
+        p2.direction = map * vec4(p.direction, 0);
+        p2.direction_squared = dot(p2.direction, p2.direction);
+        vec3 light_position2 = map * vec4(light_position, 1);
+
+        test_result t = test(p2);
+        if (t.depth_offset_squared >= 0) {
+            depth_result d = depth(t);
+            if (d.depth_squared < depth_squared) {
+                depth_squared = d.depth_squared;
+                intersection_result i = intersection(p2, d);
+                normal = i.normal;
+                position = i.position;
+                direction = p2.direction;
+                fragment_color = vec3(
+                    phong_shading(normal, position, direction, light_position2)
+                );
+            }
+        }
     }
 }

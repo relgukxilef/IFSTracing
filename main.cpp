@@ -54,7 +54,31 @@ int main()
     enum attributes : GLuint {
         position
     };
-    GLuint resolution_uniform, view_plane_size_uniform;
+    GLuint view_plane_size_uniform;
+
+    // Sierpiński triangle
+    array<const mat3x4, 3> maps{{
+        {
+            0.5, 0.0, 0.0, -0.25,
+            0.0, 0.5, 0.0, -0.25,
+            0.0, 0.0, 0.5, 0.0
+        }, {
+            0.5, 0.0, 0.0, 0.25,
+            0.0, 0.5, 0.0, -0.25,
+            0.0, 0.0, 0.5, 0.0
+        }, {
+            0.5, 0.0, 0.0, 0.0,
+            0.0, 0.5, 0.0, 0.25,
+            0.0, 0.0, 0.5, 0.0
+        },
+    }};
+
+    array<mat3x4, 3> maps_inverse;
+    for (auto i = 0u; i < 3; i++) {
+        mat4 m = mat4(maps[i]);
+        m = inverse(m);
+        maps_inverse[i] = mat3x4(m);
+    }
 
     auto trace_program = compile_program(
         "trace_vs.glsl", nullptr, nullptr, nullptr, "trace_fs.glsl", {},
@@ -62,10 +86,20 @@ int main()
     );
     get_uniform_locations(
         trace_program, {
-            {"resolution", &resolution_uniform},
             {"view_plane_size", &view_plane_size_uniform}
         }
     );
+
+    auto maps_buffer = create_buffer<const mat3x4>(
+        GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
+        {maps.begin(), maps.end()}
+    );
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, maps_buffer);
+    auto maps_inverse_buffer = create_buffer<const mat3x4>(
+        GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
+        {maps_inverse.begin(), maps_inverse.end()}
+    );
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
 
     auto quad_buffer = create_buffer<const vec2>(
         GL_ARRAY_BUFFER, GL_STATIC_DRAW, quad_positions
