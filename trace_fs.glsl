@@ -1,13 +1,38 @@
-#version 430 core
+#version 460
 
 in vec2 vertex_position;
 
 out vec3 fragment_color;
 
 uniform vec2 view_plane_size;
+uniform uint scanline_stride;
+uniform uint image_stride;
 
-layout(std430, row_major, binding = 1) readonly buffer MapsInverse {
+uniform uint max_depth;
+
+uint index;
+uint size;
+
+layout(std430) buffer;
+
+layout(row_major, binding = 1) readonly buffer MapsInverse {
     mat4x3 maps_inverse[];
+};
+
+layout(binding = 2) buffer RecursionDepths {
+    uint recursion_depths[];
+};
+
+layout(binding = 3) buffer PixelDepths {
+    float depths[];
+};
+
+struct ray {
+    vec3 origin, direction, light;
+};
+
+layout(binding = 4) buffer Rays {
+    ray rays[];
 };
 
 /*
@@ -21,6 +46,7 @@ vec3 project(vec3 point, vec3 vector) {
 struct intersection_parameters {
     vec3 origin, direction;
     float direction_squared; // Dot product of direction with itself.
+    // TODO: get rid of radius by scaling
     float radius, radius_squared;
 };
 
@@ -137,46 +163,177 @@ float phong_shading(
     return diffuse * 0.5 + specular * 0.5 + ambient;
 }
 
+uint heap_child(uint parent) {
+    return parent * 2 + 1;
+}
+
+uint heap_parent(uint child) {
+    return (child - 1) / 2;
+}
+
+void heap_swap(uint a, uint b) {
+    a = a * image_stride + index;
+    b = b * image_stride + index;
+
+    ray r = rays[a];
+    rays[a] = rays[b];
+    rays[b] = r;
+
+    float d = depths[a];
+    depths[a] = depths[b];
+    depths[b] = d;
+
+    uint rd = recursion_depths[a];
+    recursion_depths[a] = recursion_depths[b];
+    recursion_depths[b] = rd;
+}
+
+struct element {
+    ray r;
+    uint recursion_depth;
+    float depth;
+};
+
+void heap_insert(element e) {
+    uint last = size * image_stride + index;
+    rays[last] = e.r;
+    recursion_depths[last] = e.recursion_depth;
+    depths[last] = e.depth;
+
+    // heapify up
+    uint node = size;
+    uint parent = heap_parent(node);
+    while (
+        node > 0 &&
+        depths[parent * image_stride + index] >
+        depths[node * image_stride + index]
+    ) {
+        heap_swap(parent, node);
+        node = parent;
+        parent = heap_parent(node);
+    }
+
+    size++;
+}
+
+element heap_pop() {
+    element e;
+    e.r = rays[index];
+    e.recursion_depth = recursion_depths[index];
+    e.depth = depths[index];
+
+    size--;
+    heap_swap(0, size); // TODO: moving last to first is enough
+
+    // heapify down
+    uint root = 0;
+    uint smallest = root;
+    while (true) {
+        uint left = heap_child(root);
+        uint right = left + 1;
+
+        if (
+            left < size &&
+            depths[left * image_stride + index] <
+            depths[smallest * image_stride + index]
+        ) {
+            smallest = left;
+        }
+        if (
+            right < size &&
+            depths[right * image_stride + index] <
+            depths[smallest * image_stride + index]
+        ) {
+            smallest = right;
+        }
+
+        if (smallest != root) {
+            heap_swap(root, smallest);
+            root = smallest;
+        } else {
+            break;
+        }
+    }
+
+    return e;
+}
+
 void main(void)
 {
-    // determine bounding spheres of recursions
-    // trace bounding spheres
-    // repeat
+    ivec2 screen_position = ivec2(gl_FragCoord.xy);
+    index = screen_position.y * scanline_stride + screen_position.x;
+    size = 0;
+
+    /*
+    while there are spheres left to test
+        pick the closest
+        if we're at the depth limit
+            return the closest intersecting child
+        else
+            queue all intersecting children (up to 3)
+    */
 
     intersection_parameters p;
-    p.origin = -vec3(1, 0, 4);
+    p.origin = -vec3(0, 0, 1);
     p.radius = 0.5;
     p.direction = vec3(vertex_position * view_plane_size, 1);
 
     p.radius_squared = p.radius * p.radius;
     p.direction_squared = dot(p.direction, p.direction);
 
-    float depth_squared = 10000;
+    float depth_squared = 1e12;
 
-    vec3 light_position = vec3(1, 2, 3); // relative to origin
+    vec3 light_position = vec3(-1, 2, 0); // relative to origin
     vec3 normal, position, direction;
 
-    for (uint m = 0; m < maps_inverse.length(); m++) {
-        mat4x3 map = maps_inverse[m];
+    element e;
+    ray r;
+    r.origin = vec3(0, 0, -1);
+    r.direction = vec3(vertex_position * view_plane_size, 1);
+    r.light = light_position;
+    e.r = r;
+    e.recursion_depth = 0;
+    e.depth = 3; // TODO
+    heap_insert(e);
 
-        intersection_parameters p2 = p;
-        p2.origin = map * vec4(p.origin, 1);
-        p2.direction = map * vec4(p.direction, 0);
-        p2.direction_squared = dot(p2.direction, p2.direction);
-        vec3 light_position2 = map * vec4(light_position, 1);
+    uint counter = 0;
 
-        test_result t = test(p2);
-        if (t.depth_offset_squared >= 0) {
-            depth_result d = depth(t);
-            if (d.depth_squared < depth_squared) {
-                depth_squared = d.depth_squared;
-                intersection_result i = intersection(p2, d);
-                normal = i.normal;
-                position = i.position;
-                direction = p2.direction;
-                fragment_color = vec3(
-                    phong_shading(normal, position, direction, light_position2)
-                );
+    while (size > 0 && counter < 100) {
+        counter++;
+        e = heap_pop();
+        // trace children
+        for (uint m = 0; m < maps_inverse.length(); m++) {
+            mat4x3 map = maps_inverse[m];
+            element child = e;
+            child.recursion_depth++;
+            child.r.origin = map * vec4(e.r.origin, 1);
+            child.r.direction = map * vec4(e.r.direction, 0);
+            child.r.light = map * vec4(e.r.light, 1);
+
+            intersection_parameters p;
+            p.origin = child.r.origin;
+            p.direction = child.r.direction;
+            p.direction_squared = dot(p.direction, p.direction);
+            p.radius = 0.5;
+            p.radius_squared = 0.25;
+
+            test_result t = test(p);
+            if (t.depth_offset_squared >= 0) {
+                depth_result d = depth(t);
+                child.depth = d.depth_squared;
+                if (child.recursion_depth < max_depth) {
+                    heap_insert(child);
+                } else {
+                    if (d.depth_squared < depth_squared) {
+                        depth_squared = d.depth_squared;
+                        intersection_result i = intersection(p, d);
+                        fragment_color = vec3(
+                            phong_shading(
+                                i.normal, i.position, p.direction, child.r.light
+                            )
+                        );
+                    }
+                }
             }
         }
     }

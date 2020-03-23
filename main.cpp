@@ -16,15 +16,47 @@ initializer_list<const vec2> quad_positions = {
     {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
 };
 
-unsigned window_width, window_height;
-float aspect_ratio;
+unsigned window_width, window_height, max_depth;
+GLuint view_plane_size_uniform, scanline_stride_uniform, image_stride_uniform;
+GLuint max_depth_uniform;
+
+GLuint recursion_depth_buffer, depth_buffer, ray_buffer;
 
 void window_size_callback(GLFWwindow*, int width, int height) {
     window_width = static_cast<unsigned int>(width);
     window_height = static_cast<unsigned int>(height);
-    aspect_ratio = static_cast<float>(window_height) / window_width;
+    float aspect_ratio = static_cast<float>(window_height) / window_width;
 
     glViewport(0, 0, width, height);
+
+    // TODO: align
+    unsigned scanline_stride = window_width;
+    unsigned image_stride = scanline_stride * window_height;
+    unsigned element_count = image_stride * max_depth;
+
+    glUniform2f(view_plane_size_uniform, 1.0f, aspect_ratio);
+    glUniform1ui(scanline_stride_uniform, scanline_stride);
+    glUniform1ui(image_stride_uniform, image_stride);
+
+    glBindBuffer(GL_COPY_WRITE_BUFFER, recursion_depth_buffer);
+    glBufferData(
+        GL_COPY_WRITE_BUFFER, element_count * sizeof(unsigned),
+        nullptr, GL_STREAM_COPY
+    );
+    glBindBuffer(GL_COPY_WRITE_BUFFER, depth_buffer);
+    glBufferData(
+        GL_COPY_WRITE_BUFFER, element_count * sizeof(float),
+        nullptr, GL_STREAM_COPY
+    );
+    glBindBuffer(GL_COPY_WRITE_BUFFER, ray_buffer);
+    glBufferData(
+        GL_COPY_WRITE_BUFFER, element_count * 3 * 4 * sizeof(float),
+        nullptr, GL_STREAM_COPY
+    );
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, recursion_depth_buffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, depth_buffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ray_buffer);
 }
 
 int main()
@@ -36,7 +68,7 @@ int main()
     }
 
     glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
-    window = glfwCreateWindow(1280, 720, "IFS Tracer", nullptr, nullptr);
+    window = glfwCreateWindow(100, 100, "IFS Tracer", nullptr, nullptr);
 
     if (!window) {
         glfwTerminate();
@@ -54,7 +86,6 @@ int main()
     enum attributes : GLuint {
         position
     };
-    GLuint view_plane_size_uniform;
 
     // Sierpiński triangle
     array<const mat3x4, 3> maps{{
@@ -86,7 +117,10 @@ int main()
     );
     get_uniform_locations(
         trace_program, {
-            {"view_plane_size", &view_plane_size_uniform}
+            {"view_plane_size", &view_plane_size_uniform},
+            {"scanline_stride", &scanline_stride_uniform},
+            {"image_stride", &image_stride_uniform},
+            {"max_depth", &max_depth_uniform},
         }
     );
 
@@ -100,6 +134,9 @@ int main()
         {maps_inverse.begin(), maps_inverse.end()}
     );
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
+    glGenBuffers(1, &recursion_depth_buffer);
+    glGenBuffers(1, &depth_buffer);
+    glGenBuffers(1, &ray_buffer);
 
     auto quad_buffer = create_buffer<const vec2>(
         GL_ARRAY_BUFFER, GL_STATIC_DRAW, quad_positions
@@ -113,23 +150,23 @@ int main()
         position, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), nullptr
     );
 
+    glUseProgram(trace_program);
+    max_depth = 5;
+
+    glUniform1ui(max_depth_uniform, max_depth);
+
     {
         int width, height;
         glfwGetWindowSize(window, &width, &height);
         window_size_callback(window, width, height);
     }
-    glfwSetWindowSizeCallback(window, &window_size_callback);
 
+    glfwSetWindowSizeCallback(window, &window_size_callback);
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUseProgram(trace_program);
         glBindVertexArray(quad_array);
-
-
-
-        glUniform2f(view_plane_size_uniform, 1.0f, aspect_ratio);
 
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
