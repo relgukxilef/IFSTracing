@@ -7,8 +7,9 @@ out vec3 fragment_color;
 uniform vec2 view_plane_size;
 uniform uint scanline_stride;
 uniform uint image_stride;
-
 uniform uint max_depth;
+
+uniform float inverse_radius;
 
 uint index;
 uint size;
@@ -46,8 +47,6 @@ vec3 project(vec3 point, vec3 vector) {
 struct intersection_parameters {
     vec3 origin, direction;
     float direction_squared; // Dot product of direction with itself.
-    // TODO: get rid of radius by scaling
-    float radius, radius_squared;
 };
 
 /*
@@ -90,7 +89,7 @@ test_result test(
     // distance between origin point and center
     r.offset_squared = dot(r.offset, r.offset);
     r.depth_offset_squared =
-        p.radius_squared * p.direction_squared * p.direction_squared -
+        p.direction_squared * p.direction_squared -
         r.offset_squared;
     return r;
 }
@@ -141,14 +140,8 @@ intersection_result intersection (
     i.position =
         p.direction * sqrt(d.depth_squared) /
         (p.direction_squared * sqrt(p.direction_squared));
-    i.normal = (i.position + p.origin) / p.radius;
+    i.normal = i.position + p.origin;
     return i;
-}
-
-// like the step function but smooth using fwidth as width
-float soft_step(float x) {
-    float width = fwidth(x);
-    return clamp(x / width + 0.5, 0, 1);
 }
 
 float phong_shading(
@@ -274,11 +267,9 @@ void main(void)
     */
 
     intersection_parameters p;
-    p.origin = -vec3(0, 0, 1);
-    p.radius = 0.5;
+    p.origin = -vec3(0, 0, 1) * inverse_radius;
     p.direction = vec3(vertex_position * view_plane_size, 1);
 
-    p.radius_squared = p.radius * p.radius;
     p.direction_squared = dot(p.direction, p.direction);
 
     float depth_squared = 1e12;
@@ -311,11 +302,9 @@ void main(void)
             child.r.light = map * vec4(e.r.light, 1);
 
             intersection_parameters p;
-            p.origin = child.r.origin;
+            p.origin = child.r.origin * inverse_radius;
             p.direction = child.r.direction;
             p.direction_squared = dot(p.direction, p.direction);
-            p.radius = 0.5;
-            p.radius_squared = 0.25;
 
             test_result t = test(p);
             if (t.depth_offset_squared >= 0) {

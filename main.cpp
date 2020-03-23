@@ -18,7 +18,7 @@ initializer_list<const vec2> quad_positions = {
 
 unsigned window_width, window_height, max_depth;
 GLuint view_plane_size_uniform, scanline_stride_uniform, image_stride_uniform;
-GLuint max_depth_uniform;
+GLuint max_depth_uniform, inverse_radius_uniform;
 
 GLuint recursion_depth_buffer, depth_buffer, ray_buffer;
 
@@ -121,6 +121,7 @@ int main()
             {"scanline_stride", &scanline_stride_uniform},
             {"image_stride", &image_stride_uniform},
             {"max_depth", &max_depth_uniform},
+            {"inverse_radius", &inverse_radius_uniform},
         }
     );
 
@@ -153,7 +154,10 @@ int main()
     glUseProgram(trace_program);
     max_depth = 5;
 
+    float radius = 0.5;
+
     glUniform1ui(max_depth_uniform, max_depth);
+    glUniform1f(inverse_radius_uniform, 1.0f / radius);
 
     {
         int width, height;
