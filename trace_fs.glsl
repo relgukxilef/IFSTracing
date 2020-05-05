@@ -20,6 +20,7 @@ layout(row_major, binding = 1) readonly buffer MapsInverse {
     mat4x3 maps_inverse[];
 };
 
+// TODO: try using textures for these to allow smaller types and better locality
 layout(binding = 2) buffer RecursionDepths {
     uint recursion_depths[];
 };
@@ -112,6 +113,7 @@ Assumes test has already been used and there is an intersection.
 depth_result depth(
     test_result t
 ) {
+    // TODO: depths are at wrong scale
     depth_result d;
     d.closest_squared = dot(t.closest, t.closest);
 
@@ -216,7 +218,9 @@ element heap_pop() {
     e.depth = depths[index];
 
     size--;
-    heap_swap(0, size); // TODO: moving last to first is enough
+    rays[0] = rays[size];
+    depths[0] = depths[size];
+    recursion_depths[0] = recursion_depths[size];
 
     // heapify down
     uint root = 0;
@@ -263,7 +267,7 @@ void main(void)
         if we're at the depth limit
             return the closest intersecting child
         else
-            queue all intersecting children (up to 3)
+            queue all intersecting children (up to number of transformations)
     */
 
     intersection_parameters p;

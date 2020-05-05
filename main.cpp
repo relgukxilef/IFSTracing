@@ -16,7 +16,7 @@ initializer_list<const vec2> quad_positions = {
     {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
 };
 
-unsigned window_width, window_height, max_depth;
+unsigned window_width, window_height, max_depth, max_queue_depth;
 GLuint view_plane_size_uniform, scanline_stride_uniform, image_stride_uniform;
 GLuint max_depth_uniform, inverse_radius_uniform;
 
@@ -32,7 +32,7 @@ void window_size_callback(GLFWwindow*, int width, int height) {
     // TODO: align
     unsigned scanline_stride = window_width;
     unsigned image_stride = scanline_stride * window_height;
-    unsigned element_count = image_stride * max_depth;
+    unsigned element_count = image_stride * max_queue_depth;
 
     glUniform2f(view_plane_size_uniform, 1.0f, aspect_ratio);
     glUniform1ui(scanline_stride_uniform, scanline_stride);
@@ -88,24 +88,43 @@ int main()
     };
 
     // Sierpiński triangle
-    array<const mat3x4, 3> maps{{
+    /*array<const mat3x4, 3> maps{{
         {
             0.5, 0.0, 0.0, -0.25,
-            0.0, 0.5, 0.0, -0.25,
+            0.0, 0.5, 0.0, -0.183,
             0.0, 0.0, 0.5, 0.0
         }, {
             0.5, 0.0, 0.0, 0.25,
-            0.0, 0.5, 0.0, -0.25,
+            0.0, 0.5, 0.0, -0.183,
             0.0, 0.0, 0.5, 0.0
         }, {
             0.5, 0.0, 0.0, 0.0,
             0.0, 0.5, 0.0, 0.25,
             0.0, 0.0, 0.5, 0.0
         },
+    }};*/
+    array<const mat3x4, 4> maps{{
+        {
+            0.5, 0.0, 0.0, -0.25,
+            0.0, 0.5, 0.0, 0.0,
+            0.0, 0.0, 0.5, 0.0
+        }, {
+            0.5, 0.0, 0.0, 0.25,
+            0.0, 0.5, 0.0, 0.0,
+            0.0, 0.0, 0.5, 0.0
+        }, {
+            0.5, 0.0, 0.0, 0.0,
+            0.0, 0.5, 0.0, 0.25,
+            0.0, 0.0, 0.5, 0.0
+        }, {
+            0.5, 0.0, 0.0, 0.0,
+            0.0, 0.5, 0.0, -0.25,
+            0.0, 0.0, 0.5, 0.0
+        },
     }};
 
-    array<mat3x4, 3> maps_inverse;
-    for (auto i = 0u; i < 3; i++) {
+    array<mat3x4, 4> maps_inverse;
+    for (auto i = 0u; i < 4; i++) {
         mat4 m = mat4(maps[i]);
         m = inverse(m);
         maps_inverse[i] = mat3x4(m);
@@ -152,7 +171,8 @@ int main()
     );
 
     glUseProgram(trace_program);
-    max_depth = 5;
+    max_depth = 3;
+    max_queue_depth = 10;
 
     float radius = 0.5;
 
