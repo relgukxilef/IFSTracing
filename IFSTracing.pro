@@ -13,6 +13,4 @@ SOURCES += \
     main.cpp
 
 DISTFILES += \
-    trace.glsl \
-    trace_fs.glsl \
-    trace_vs.glsl
+    trace.glsl
