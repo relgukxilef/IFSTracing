@@ -15,7 +15,7 @@ uniform uint max_depth;
 
 uniform float inverse_radius;
 
-uniform mat4 view_matrix;
+uniform mat4 model_matrix;
 
 layout(row_major, binding = 1) readonly buffer MapsInverse {
     mat4x3 maps_inverse[];
@@ -186,9 +186,11 @@ element heap_pop() {
 
 void main(void) {
     uvec2 position = gl_GlobalInvocationID.xy;
-    vec3 from = vec3(0, 0, -4);
-    vec3 direction = vec3((vec2(position) - pixel_offset) * pixel_size, 1);
-    vec3 light_position = vec3(0, 0.5, -0.5);
+    vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
+    vec3 direction = (
+        model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
+    ).xyz;
+    vec3 light_position = (model_matrix * vec4(0, 0.5, -0.5, 1)).xyz;
 
     size = 0;
 

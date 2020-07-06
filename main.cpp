@@ -3,9 +3,11 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #include "ge1/program.h"
 #include "ge1/vertex_buffer.h"
@@ -20,10 +22,14 @@ GLuint pixel_size_uniform, pixel_offset_uniform;
 GLuint color_uniform;
 GLuint max_depth_uniform, inverse_radius_uniform;
 GLuint framebuffer = 0, color_texture = 0;
-mat4 view_matrix;
+mat4 model_matrix;
+vec2 rotation;
+vec3 translation;
+
+vec2 previous_mouse_position;
 
 struct {
-    GLuint recursions, depths, froms, directions, lights, view_matrix;
+    GLuint recursions, depths, froms, directions, lights, model_matrix;
 } uniforms;
 
 union {
@@ -35,12 +41,19 @@ union {
 
 enum struct operation {
     none, rotate, pan, zoom
-} current_operation;
+} current_operation = operation::none;
 
 void cursor_position_callback(GLFWwindow*, double x, double y) {
+    vec2 mouse_position(x, y);
+    vec2 delta = mouse_position - previous_mouse_position;
     switch (current_operation) {
     case operation::rotate:
-
+    {
+        rotation += delta * -0.005f;
+        model_matrix = translate(
+            eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 4)
+        );
+    }
         break;
     case operation::pan:
         break;
@@ -49,6 +62,8 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
     case operation::none:
         break;
     }
+
+    previous_mouse_position = mouse_position;
 }
 
 void mouse_button_callback(
@@ -56,7 +71,6 @@ void mouse_button_callback(
 ) {
     switch (current_operation) {
     case operation::rotate:
-
         break;
     case operation::pan:
         break;
@@ -75,6 +89,9 @@ void mouse_button_callback(
                 current_operation = operation::zoom;
             }
         }
+    }
+    if (action == GLFW_RELEASE) {
+        current_operation = operation::none;
     }
 }
 
@@ -162,7 +179,7 @@ int main()
         }, {
             0.5, 0.0, 0.0, 0.0,
             0.0, 0.5, 0.0, -0.25,
-            0.0, 0.0, 0.5, sqrt(3)/2
+            0.0, 0.0, 0.5, sqrt(3)/4
         }, {
             0.5, 0.0, 0.0, 0.1875*2,
             0.0, 0.5, 0.0, -0.25,
@@ -194,7 +211,7 @@ int main()
             {"froms", &uniforms.froms},
             {"directions", &uniforms.directions},
             {"lights", &uniforms.lights},
-            {"view_matrix", &uniforms.view_matrix},
+            {"model_matrix", &uniforms.model_matrix},
         }
     );
 
@@ -224,13 +241,16 @@ int main()
     glUniform1i(uniforms.directions, directions);
     glUniform1i(uniforms.lights, lights);
 
+    glfwSetCursorPosCallback(window, &cursor_position_callback);
+    glfwSetMouseButtonCallback(window, &mouse_button_callback);
+
     {
         int width, height;
         glfwGetWindowSize(window, &width, &height);
         window_size_callback(window, width, height);
     }
 
-    view_matrix = lookAt(vec3(0, -4, 0), vec3(0), vec3(0, 0, 1));
+    model_matrix = translate(mat4(1), vec3(0, 0, 4));
 
     glfwSetWindowSizeCallback(window, &window_size_callback);
 
@@ -266,7 +286,7 @@ int main()
         );
 
         glUniformMatrix4fv(
-            uniforms.view_matrix, 1, GL_FALSE, value_ptr(view_matrix)
+            uniforms.model_matrix, 1, GL_FALSE, value_ptr(model_matrix)
         );
 
         glDispatchCompute(
