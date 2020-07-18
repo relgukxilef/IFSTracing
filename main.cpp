@@ -13,6 +13,8 @@
 #include "ge1/vertex_buffer.h"
 #include "ge1/framebuffer.h"
 
+#include "fractal.h"
+
 using namespace std;
 using namespace ge1;
 using namespace glm;
@@ -170,33 +172,7 @@ int main()
         color, depths, recursions, froms, directions, lights
     };
 
-    // Sierpiński triangle
-    array<const mat3x4, 4> maps{{
-        {
-            0.5, 0.0, 0.0, 0,
-            0.0, 0.5, 0.0, 0.5,
-            0.0, 0.0, 0.5, 0.0
-        }, {
-            0.5, 0.0, 0.0, 0.0,
-            0.0, 0.5, 0.0, -0.25,
-            0.0, 0.0, 0.5, sqrt(3)/4
-        }, {
-            0.5, 0.0, 0.0, 0.1875*2,
-            0.0, 0.5, 0.0, -0.25,
-            0.0, 0.0, 0.5, -sqrt(3)/8
-        }, {
-            0.5, 0.0, 0.0, -0.1875*2,
-            0.0, 0.5, 0.0, -0.25,
-            0.0, 0.0, 0.5, -sqrt(3)/8
-        },
-    }};
-
-    array<mat3x4, 4> maps_inverse;
-    for (auto i = 0u; i < 4; i++) {
-        mat4 m = mat4(maps[i]);
-        m = inverse(m);
-        maps_inverse[i] = mat3x4(m);
-    }
+    fractal f("Sierpinski Triangle.json");
 
     auto trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
@@ -215,14 +191,9 @@ int main()
         }
     );
 
-    auto maps_buffer = create_buffer<const mat3x4>(
-        GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
-        {maps.begin(), maps.end()}
-    );
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, maps_buffer);
     auto maps_inverse_buffer = create_buffer<const mat3x4>(
         GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
-        {maps_inverse.begin(), maps_inverse.end()}
+        {f.mappings.begin(), f.mappings.end()}
     );
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
 
