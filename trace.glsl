@@ -41,12 +41,11 @@ struct intersection_result {
     bool hit;
 };
 
-// TODO: remove radius, it's always 1
 intersection_result intersect(
-    vec3 from, vec3 direction, vec3 sphere, float radius
+    vec3 from, vec3 direction, vec3 sphere
 ) {
     intersection_result result;
-    vec3 offset = (from - sphere) / radius;
+    vec3 offset = from - sphere;
     direction = normalize(direction);
 
     vec3 closest = project(-offset, direction) + offset;
@@ -61,19 +60,19 @@ intersection_result intersect(
         if (circle_depth - depth_offset > 0) {
             // hit outside of sphere
             result.hit = true;
-            result.depth = (circle_depth - depth_offset) * radius;
+            result.depth = circle_depth - depth_offset;
 
         } else if (circle_depth + depth_offset > 0) {
             // hit inside of sphere
             result.hit = true;
-            result.depth = (circle_depth + depth_offset) * radius;
+            result.depth = circle_depth + depth_offset;
         } else {
             result.hit = false;
         }
 
         if (result.hit) {
             result.position = from + result.depth * direction;
-            result.normal = (result.position - sphere) / radius;
+            result.normal = result.position - sphere;
         }
     }
 
@@ -220,7 +219,7 @@ trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
             child.light = map * vec4(e.light, 1);
 
             intersection_result i = intersect(
-                child.from, child.direction, vec3(0), 1
+                child.from, child.direction, vec3(0)
             );
 
             if (i.hit) {
