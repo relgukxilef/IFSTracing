@@ -37,6 +37,7 @@ struct intersection_result {
     bool hit;
 };
 
+// TODO: remove radius, it's always 1
 intersection_result intersect(
     vec3 from, vec3 direction, vec3 sphere, float radius
 ) {
@@ -52,16 +53,21 @@ intersection_result intersect(
         // ray hits circle orthogonal to ray
         float distance = length(offset);
         float depth_offset = sqrt(1 - closest_squared);
-        result.depth = (
-            sqrt(
-                distance * distance -
-                closest_squared
-            ) - depth_offset
-        ) * radius;
-        result.hit = result.depth > 0;
+        float circle_depth = sqrt(distance * distance - closest_squared);
+        if (circle_depth - depth_offset > 0) {
+            // hit outside of sphere
+            result.hit = true;
+            result.depth = (circle_depth - depth_offset) * radius;
+
+        } else if (circle_depth + depth_offset > 0) {
+            // hit inside of sphere
+            result.hit = true;
+            result.depth = (circle_depth + depth_offset) * radius;
+        } else {
+            result.hit = false;
+        }
 
         if (result.hit) {
-            // sphere is not around or behind from
             result.position = from + result.depth * direction;
             result.normal = (result.position - sphere) / radius;
         }
@@ -73,6 +79,7 @@ intersection_result intersect(
 float phong_shading(
     vec3 normal, vec3 position, vec3 direction, vec3 light_position
 ) {
+    // TODO: add shadows
     vec3 light_direction = normalize(light_position - position);
     vec3 reflection_direction = reflect(light_direction, normal);
     float diffuse = max(dot(light_direction, normal), 0);
@@ -184,13 +191,14 @@ element heap_pop() {
     return e;
 }
 
-void main(void) {
-    uvec2 position = gl_GlobalInvocationID.xy;
-    vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
-    vec3 direction = (
-        model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
-    ).xyz;
-    vec3 light_position = (model_matrix * vec4(0, 0.5, -0.5, 1)).xyz;
+struct trace_result {
+    element e;
+    intersection_result i;
+};
+
+trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
+    trace_result result;
+    result.i.depth = 1e12;
 
     size = 0;
 
@@ -203,9 +211,6 @@ void main(void) {
 
     heap_insert(start);
 
-    float depth = 1e12;
-    float shade = 1.0;
-
     while (size > 0) {
         element e = heap_pop();
 
@@ -217,27 +222,61 @@ void main(void) {
             child.direction = map * vec4(e.direction, 0);
             child.light = map * vec4(e.light, 1);
 
-            intersection_result result = intersect(
+            intersection_result i = intersect(
                 child.from, child.direction, vec3(0), 1
             );
 
-            if (result.hit) {
+            if (i.hit) {
                 if (e.recursion < max_depth) {
                     heap_insert(child);
                 } else {
-                    if (result.depth < depth) {
-                        depth = result.depth;
-                        shade = phong_shading(
-                            result.normal, result.position,
-                            child.direction, child.light
-                        );
+                    if (i.depth < result.i.depth) {
+                        result.e = e;
+                        result.i = i;
                     }
                 }
             }
         }
     }
 
-    shade = pow(shade, 1.0 / 2.2);
+    return result;
+}
 
-    imageStore(color, ivec2(position), vec4(vec3(shade), 0));
+void main(void) {
+    uvec2 position = gl_GlobalInvocationID.xy;
+    vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
+    vec3 direction = (
+        model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
+    ).xyz;
+    vec3 light_position = vec3(0, 0.5, -0.5);
+
+    float depth = 1e12;
+
+    trace_result t = trace(from, direction, light_position);
+
+    vec3 shade = vec3(1);
+
+    if (t.i.depth < depth) {
+        // TODO: i.position is relative to sphere
+        // shadow
+        //trace_result shadow = trace(
+        //    t.i.position, light_position - t.i.position, vec3(0)
+        //);
+
+        shade = t.i.position * 0.5 + 0.5;
+
+        depth = t.i.depth;
+        shade *= phong_shading(
+            t.i.normal, t.i.position,
+            t.e.direction, t.e.light
+        );
+
+        //if (shadow.i.depth < depth) {
+        //    shade = 0.0;
+        //}
+    }
+
+    shade = pow(shade, vec3(1.0 / 2.2));
+
+    imageStore(color, ivec2(position), vec4(shade, 0));
 }

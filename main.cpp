@@ -51,7 +51,7 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
     {
         rotation += delta * -0.005f;
         model_matrix = translate(
-            eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 4)
+            eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 0.9)
         );
     }
         break;
@@ -67,7 +67,7 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
 }
 
 void mouse_button_callback(
-    GLFWwindow* window, int button, int action, int modifiers
+    GLFWwindow* window, int button, int action, int
 ) {
     switch (current_operation) {
     case operation::rotate:
