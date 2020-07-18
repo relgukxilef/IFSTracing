@@ -19,7 +19,7 @@ using namespace std;
 using namespace ge1;
 using namespace glm;
 
-unsigned window_width, window_height, max_depth, max_queue_depth;
+unsigned window_width, window_height, max_depth;
 GLuint pixel_size_uniform, pixel_offset_uniform;
 GLuint color_uniform;
 GLuint max_depth_uniform, inverse_radius_uniform;
@@ -53,7 +53,7 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
     {
         rotation += delta * -0.005f;
         model_matrix = translate(
-            eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 0.9)
+            eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 4)
         );
     }
         break;
@@ -118,30 +118,6 @@ void window_size_callback(GLFWwindow*, int width, int height) {
             {GL_COLOR_ATTACHMENT0, &color_texture, GL_RGBA8}
         }
     );
-
-    glDeleteTextures(5, textures.names);
-    glGenTextures(5, textures.names);
-
-    glBindTexture(GL_TEXTURE_3D, textures.recursions);
-    glTexStorage3D(GL_TEXTURE_3D, 1, GL_R8UI, width, height, max_queue_depth);
-
-    glBindTexture(GL_TEXTURE_3D, textures.depths);
-    glTexStorage3D(GL_TEXTURE_3D, 1, GL_R32F, width, height, max_queue_depth);
-
-    glBindTexture(GL_TEXTURE_3D, textures.froms);
-    glTexStorage3D(
-        GL_TEXTURE_3D, 1, GL_RGBA32F, width, height, max_queue_depth
-    );
-
-    glBindTexture(GL_TEXTURE_3D, textures.directions);
-    glTexStorage3D(
-        GL_TEXTURE_3D, 1, GL_RGBA32F, width, height, max_queue_depth
-    );
-
-    glBindTexture(GL_TEXTURE_3D, textures.lights);
-    glTexStorage3D(
-        GL_TEXTURE_3D, 1, GL_RGBA32F, width, height, max_queue_depth
-    );
 }
 
 int main()
@@ -199,7 +175,6 @@ int main()
 
     glUseProgram(trace_program);
     max_depth = 8;
-    max_queue_depth = 10;
 
     float radius = 0.5;
 
@@ -261,8 +236,8 @@ int main()
         );
 
         glDispatchCompute(
-            (window_width - 1) / 128 + 1,
-            (window_height - 1) / 2 + 1, 1
+            (window_width - 1) / 32 + 1,
+            (window_height - 1) / 32 + 1, 1
         );
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);

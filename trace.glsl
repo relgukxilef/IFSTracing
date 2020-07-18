@@ -1,13 +1,17 @@
 #version 460
 
-layout(local_size_x = 128, local_size_y = 2, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 layout(std430) buffer;
 
 layout(rgba8) uniform writeonly image2D color;
 
-layout(r8ui) uniform uimage3D recursions;
-layout(r32f) uniform image3D depths;
-layout(rgba32f) uniform image3D froms, directions, lights;
+const uint queue_size = 16;
+
+uint recursions[queue_size];
+float depths[queue_size];
+vec3 froms[queue_size];
+vec3 directions[queue_size];
+vec3 lights[queue_size];
 
 uniform vec2 pixel_size;
 uniform vec2 pixel_offset;
@@ -104,24 +108,20 @@ struct element {
 };
 
 void set(uint i, element e) {
-    imageStore(froms, ivec3(gl_GlobalInvocationID.xy, i), vec4(e.from, 0));
-    imageStore(
-        directions, ivec3(gl_GlobalInvocationID.xy, i), vec4(e.direction, 0)
-    );
-    imageStore(lights, ivec3(gl_GlobalInvocationID.xy, i), vec4(e.light, 0));
-    imageStore(
-        recursions, ivec3(gl_GlobalInvocationID.xy, i), uvec4(e.recursion)
-    );
-    imageStore(depths, ivec3(gl_GlobalInvocationID.xy, i), vec4(e.depth));
+    froms[i] = e.from;
+    directions[i] = e.direction;
+    lights[i] = e.light;
+    recursions[i] = e.recursion;
+    depths[i] = e.depth;
 }
 
 element get(uint i) {
     element e;
-    e.from = imageLoad(froms, ivec3(gl_GlobalInvocationID.xy, i)).rgb;
-    e.direction = imageLoad(directions, ivec3(gl_GlobalInvocationID.xy, i)).rgb;
-    e.light = imageLoad(lights, ivec3(gl_GlobalInvocationID.xy, i)).rgb;
-    e.recursion = imageLoad(recursions, ivec3(gl_GlobalInvocationID.xy, i)).r;
-    e.depth = imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, i)).r;
+    e.from = froms[i];
+    e.direction = directions[i];
+    e.light = lights[i];
+    e.recursion = recursions[i];
+    e.depth = depths[i];
     return e;
 }
 
@@ -141,8 +141,7 @@ void heap_insert(element e) {
     uint parent = heap_parent(node);
     while (
         node > 0 &&
-        imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, parent)).r >
-        imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, node)).r
+        depths[parent] > depths[node]
     ) {
         heap_swap(parent, node);
         node = parent;
@@ -167,15 +166,13 @@ element heap_pop() {
 
         if (
             left < size &&
-            imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, left)).r <
-            imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, smallest)).r
+            depths[left] < depths[smallest]
         ) {
             smallest = left;
         }
         if (
             right < size &&
-            imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, right)).r <
-            imageLoad(depths, ivec3(gl_GlobalInvocationID.xy, smallest)).r
+            depths[right] < depths[smallest]
         ) {
             smallest = right;
         }
