@@ -15,6 +15,10 @@
 
 #include "fractal.h"
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
 using namespace std;
 using namespace ge1;
 using namespace glm;
@@ -144,6 +148,11 @@ int main()
 
     glEnable(GL_FRAMEBUFFER_SRGB);
 
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.Fonts->AddFontFromFileTTF("fonts/Lato-Regular.ttf", 20.0f);
+
     enum image_units : GLuint {
         color, depths, recursions, froms, directions, lights
     };
@@ -200,7 +209,14 @@ int main()
 
     glfwSetWindowSizeCallback(window, &window_size_callback);
 
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+
     while (!glfwWindowShouldClose(window)) {
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
         glBindImageTexture(
             color, color_texture,
             0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8
@@ -249,10 +265,27 @@ int main()
             GL_COLOR_BUFFER_BIT, GL_NEAREST
         );
 
+        ImGui::Begin("Settings");
+        if (ImGui::SliderInt(
+            "Recursion Depth", reinterpret_cast<int*>(&max_depth), 0, 10
+        )) {
+            glUniform1ui(max_depth_uniform, max_depth);
+        }
+        ImGui::End();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
 
         glfwPollEvents();
     }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(window);
 
     return 0;
 }

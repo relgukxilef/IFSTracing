@@ -11,10 +11,12 @@ include(ge1/ge1.pri)
 
 SOURCES += \
     fractal.cpp \
-    main.cpp
+    main.cpp \
+    $$files(imgui/*.cpp, true)
 
 DISTFILES += \
     trace.glsl
 
 HEADERS += \
-    fractal.h
+    fractal.h \
+    $$files(imgui/*.h, true)
