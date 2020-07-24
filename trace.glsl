@@ -44,6 +44,21 @@ intersection_result intersect(
 ) {
     intersection_result result;
     vec3 offset = from - sphere;
+
+    if (dot(offset, offset) < 1.0) {
+        // from is inside sphere
+        result.hit = true;
+        result.depth = 0;
+        result.position = from;
+        return result;
+    }
+    if (dot(direction, offset) > 0.0) {
+        // ray points away from sphere
+        result.hit = false;
+        return result;
+    }
+
+    // TODO: avoid normalization
     direction = normalize(direction);
 
     vec3 closest = project(-offset, direction) + offset;
@@ -55,39 +70,18 @@ intersection_result intersect(
         float distance = length(offset);
         float depth_offset = sqrt(1 - closest_squared);
         float circle_depth = sqrt(distance * distance - closest_squared);
-        if (circle_depth - depth_offset > 0) {
-            // hit outside of sphere
-            result.hit = true;
-            result.depth = circle_depth - depth_offset;
 
-        } else if (circle_depth + depth_offset > 0) {
-            // hit inside of sphere
-            result.hit = true;
-            result.depth = circle_depth + depth_offset;
-        } else {
-            result.hit = false;
-        }
+        result.hit = circle_depth - depth_offset > 0;
+        result.depth = circle_depth - depth_offset;
 
         if (result.hit) {
+            // TODO: test performance impact of this if
             result.position = from + result.depth * direction;
             result.normal = result.position - sphere;
         }
     }
 
     return result;
-}
-
-float phong_shading(
-    vec3 normal, vec3 position, vec3 direction, vec3 light_position
-) {
-    // TODO: add shadows
-    vec3 light_direction = normalize(light_position - position);
-    vec3 reflection_direction = reflect(light_direction, normal);
-    float diffuse = max(dot(light_direction, normal), 0);
-    float specular =
-        pow(max(dot(normalize(direction), reflection_direction), 0), 100);
-    float ambient = 0.05;
-    return diffuse * 0.5 + specular * 0.5 + ambient;
 }
 
 uint heap_child(uint parent) {
@@ -186,7 +180,7 @@ struct trace_result {
     intersection_result i;
 };
 
-trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
+trace_result trace(vec3 from, vec3 direction) {
     trace_result result;
     result.i.depth = 1e12;
 
@@ -220,7 +214,7 @@ trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
                     heap_insert(child);
                 } else {
                     if (i.depth < result.i.depth) {
-                        result.e = e;
+                        result.e = child;
                         result.i = i;
                     }
                 }
@@ -231,40 +225,50 @@ trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
     return result;
 }
 
+mat4x3 projective_inverse(mat4x3 m) {
+    mat3 a = mat3(m);
+    vec3 t = m[3];
+    a = inverse(a);
+    return mat4x3(a[0], a[1], a[2], -a * t);
+}
+mat3x4 projective_inverse(mat3x4 m) {
+    return transpose(projective_inverse(transpose(m)));
+}
+
 void main(void) {
     uvec2 position = gl_GlobalInvocationID.xy;
     vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
     vec3 direction = (
         model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
     ).xyz;
-    vec3 light = vec3(0, 0.5, -0.5);
+    vec3 light = vec3(0, 1.0, -1.0);
 
-    float depth = 1e12;
+    float max_depth = 1e12;
 
-    trace_result t = trace(from, direction, light);
+    trace_result t = trace(from, direction);
 
     vec3 shade = vec3(1);
 
-    if (t.i.depth < depth) {
-        // TODO: i.position is relative to sphere
-        // shadow
-        //trace_result shadow = trace(
-        //    t.i.position, light_position - t.i.position, vec3(0)
-        //);
+    if (t.i.depth < max_depth) {
+        mat3x4 inverse_matrix = projective_inverse(t.e.matrix);
 
-        shade = t.i.position * 0.5 + 0.5;
+        vec3 position = vec4(t.i.position * 1.01, 1.0) * inverse_matrix;
 
-        depth = t.i.depth;
-        shade *= phong_shading(
-            t.i.normal,
-            t.i.position,
-            vec4(direction, 0.0) * t.e.matrix,
-            vec4(light, 1.0) * t.e.matrix
+        trace_result shadow = trace(
+            position,
+            light - position
         );
 
-        //if (shadow.i.depth < depth) {
-        //    shade = 0.0;
-        //}
+        vec3 light_direction = normalize(light - position);
+        vec3 reflection_direction = reflect(light_direction, t.i.normal);
+        float diffuse = max(dot(light_direction, t.i.normal), 0);
+        float specular =
+            pow(max(dot(normalize(direction), reflection_direction), 0), 100);
+        float ambient = 0.05;
+        float lighting = mix(diffuse * 0.5 + specular * 0.5, 0, shadow.i.hit);
+        shade *= lighting + ambient;
+
+        //shade = position * 0.5 + 0.5;
     }
 
     shade = pow(shade, vec3(1.0 / 2.2));

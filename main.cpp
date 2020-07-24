@@ -137,7 +137,7 @@ int main()
     }
 
     glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
-    window = glfwCreateWindow(100, 100, "IFS Tracer", nullptr, nullptr);
+    window = glfwCreateWindow(800, 800, "IFS Tracer", nullptr, nullptr);
 
     if (!window) {
         glfwTerminate();
@@ -187,7 +187,7 @@ int main()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
 
     glUseProgram(trace_program);
-    max_depth = 8;
+    max_depth = 3;
 
     float radius = 0.5;
 
