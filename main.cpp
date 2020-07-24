@@ -256,8 +256,8 @@ int main()
         );
 
         glDispatchCompute(
-            (window_width - 1) / 32 + 1,
-            (window_height - 1) / 32 + 1, 1
+            (window_width - 1) / 8 + 1,
+            (window_height - 1) / 4 + 1, 1
         );
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);

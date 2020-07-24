@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 4, local_size_z = 1) in;
 layout(std430) buffer;
 
 layout(rgba8) uniform writeonly image2D color;
@@ -19,8 +19,8 @@ uniform float inverse_radius;
 
 uniform mat4 model_matrix;
 
-layout(row_major, binding = 1) readonly buffer MapsInverse {
-    mat4x3 maps_inverse[];
+layout(binding = 1) readonly buffer MapsInverse {
+    mat3x4 maps_inverse[];
 };
 
 uint size;
@@ -34,16 +34,16 @@ vec3 project(vec3 point, vec3 vector) {
 }
 
 struct intersection_result {
-    vec3 position, normal;
+    vec3 position;
     float depth;
     bool hit;
 };
 
 intersection_result intersect(
-    vec3 from, vec3 direction, vec3 sphere
+    vec3 from, vec3 direction
 ) {
     intersection_result result;
-    vec3 offset = from - sphere;
+    vec3 offset = from;
 
     if (dot(offset, offset) < 1.0) {
         // from is inside sphere
@@ -75,9 +75,7 @@ intersection_result intersect(
         result.depth = circle_depth - depth_offset;
 
         if (result.hit) {
-            // TODO: test performance impact of this if
             result.position = from + result.depth * direction;
-            result.normal = result.position - sphere;
         }
     }
 
@@ -151,17 +149,18 @@ element heap_pop() {
         uint left = heap_child(root);
         uint right = left + 1;
 
-        if (
-            left < size &&
-            depths[left] < depths[smallest]
-        ) {
-            smallest = left;
-        }
-        if (
-            right < size &&
-            depths[right] < depths[smallest]
-        ) {
-            smallest = right;
+        if (left < size) {
+            if (
+                depths[left] < depths[smallest]
+            ) {
+                smallest = left;
+            }
+            if (
+                right < size &&
+                depths[right] < depths[smallest]
+            ) {
+                smallest = right;
+            }
         }
 
         if (smallest != root) {
@@ -197,16 +196,14 @@ trace_result trace(vec3 from, vec3 direction) {
         element e = heap_pop();
 
         for (uint m = 0; m < maps_inverse.length(); m++) {
-            mat4x3 map = maps_inverse[m];
+            mat3x4 map = maps_inverse[m];
             element child = e;
             child.recursion++;
-            child.matrix = mat3x4(
-                transpose(mat4(map) * mat4(transpose(e.matrix)))
-            );
+            child.matrix = mat3x4(mat4(e.matrix) * mat4(map));
 
             intersection_result i = intersect(
                 vec4(from, 1.0) * child.matrix,
-                vec4(direction, 0.0) * child.matrix, vec3(0)
+                vec4(direction, 0.0) * child.matrix
             );
 
             if (i.hit) {
@@ -260,8 +257,8 @@ void main(void) {
         );
 
         vec3 light_direction = normalize(light - position);
-        vec3 reflection_direction = reflect(light_direction, t.i.normal);
-        float diffuse = max(dot(light_direction, t.i.normal), 0);
+        vec3 reflection_direction = reflect(light_direction, t.i.position);
+        float diffuse = max(dot(light_direction, t.i.position), 0);
         float specular =
             pow(max(dot(normalize(direction), reflection_direction), 0), 100);
         float ambient = 0.05;
