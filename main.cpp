@@ -49,6 +49,8 @@ enum struct operation {
     none, rotate, pan, zoom
 } current_operation = operation::none;
 
+ImGuiIO* io;
+
 void cursor_position_callback(GLFWwindow*, double x, double y) {
     vec2 mouse_position(x, y);
     vec2 delta = mouse_position - previous_mouse_position;
@@ -75,6 +77,8 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
 void mouse_button_callback(
     GLFWwindow* window, int button, int action, int
 ) {
+    if (io->WantCaptureMouse) return;
+
     switch (current_operation) {
     case operation::rotate:
         break;
@@ -150,8 +154,8 @@ int main()
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.Fonts->AddFontFromFileTTF("fonts/Lato-Regular.ttf", 20.0f);
+    io = &ImGui::GetIO();
+    io->Fonts->AddFontFromFileTTF("fonts/Lato-Regular.ttf", 20.0f);
 
     enum image_units : GLuint {
         color, depths, recursions, froms, directions, lights
