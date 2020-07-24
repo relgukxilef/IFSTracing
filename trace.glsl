@@ -9,9 +9,7 @@ const uint queue_size = 16;
 
 uint recursions[queue_size];
 float depths[queue_size];
-vec3 froms[queue_size];
-vec3 directions[queue_size];
-vec3 lights[queue_size];
+mat3x4 matrices[queue_size];
 
 uniform vec2 pixel_size;
 uniform vec2 pixel_offset;
@@ -101,24 +99,20 @@ uint heap_parent(uint child) {
 }
 
 struct element {
-    vec3 from, direction, light;
     uint recursion;
     float depth;
+    mat3x4 matrix;
 };
 
 void set(uint i, element e) {
-    froms[i] = e.from;
-    directions[i] = e.direction;
-    lights[i] = e.light;
+    matrices[i] = e.matrix;
     recursions[i] = e.recursion;
     depths[i] = e.depth;
 }
 
 element get(uint i) {
     element e;
-    e.from = froms[i];
-    e.direction = directions[i];
-    e.light = lights[i];
+    e.matrix = matrices[i];
     e.recursion = recursions[i];
     e.depth = depths[i];
     return e;
@@ -199,9 +193,7 @@ trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
     size = 0;
 
     element start;
-    start.from = from;
-    start.direction = direction;
-    start.light = light_position;
+    start.matrix = mat3x4(1);
     start.recursion = 0;
     start.depth = 0;
 
@@ -214,12 +206,13 @@ trace_result trace(vec3 from, vec3 direction, vec3 light_position) {
             mat4x3 map = maps_inverse[m];
             element child = e;
             child.recursion++;
-            child.from = map * vec4(e.from, 1);
-            child.direction = map * vec4(e.direction, 0);
-            child.light = map * vec4(e.light, 1);
+            child.matrix = mat3x4(
+                transpose(mat4(map) * mat4(transpose(e.matrix)))
+            );
 
             intersection_result i = intersect(
-                child.from, child.direction, vec3(0)
+                vec4(from, 1.0) * child.matrix,
+                vec4(direction, 0.0) * child.matrix, vec3(0)
             );
 
             if (i.hit) {
@@ -244,11 +237,11 @@ void main(void) {
     vec3 direction = (
         model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
     ).xyz;
-    vec3 light_position = vec3(0, 0.5, -0.5);
+    vec3 light = vec3(0, 0.5, -0.5);
 
     float depth = 1e12;
 
-    trace_result t = trace(from, direction, light_position);
+    trace_result t = trace(from, direction, light);
 
     vec3 shade = vec3(1);
 
@@ -263,8 +256,10 @@ void main(void) {
 
         depth = t.i.depth;
         shade *= phong_shading(
-            t.i.normal, t.i.position,
-            t.e.direction, t.e.light
+            t.i.normal,
+            t.i.position,
+            vec4(direction, 0.0) * t.e.matrix,
+            vec4(light, 1.0) * t.e.matrix
         );
 
         //if (shadow.i.depth < depth) {
