@@ -216,10 +216,15 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
 
+    GLuint time_elapsed_query;
+    glGenQueries(1, &time_elapsed_query);
+
     while (!glfwWindowShouldClose(window)) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+
+        glBeginQuery(GL_TIME_ELAPSED, time_elapsed_query);
 
         glBindImageTexture(
             color, color_texture,
@@ -260,6 +265,8 @@ int main()
             (window_height - 1) / 4 + 1, 1
         );
 
+        glEndQuery(GL_TIME_ELAPSED);
+
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
@@ -276,6 +283,54 @@ int main()
             glUniform1ui(max_depth_uniform, max_depth);
         }
         ImGui::End();
+
+        GLuint query_result;
+        glGetQueryObjectuiv(time_elapsed_query, GL_QUERY_RESULT, &query_result);
+
+        float elapsed_time = query_result * 1e-9f;
+        static const unsigned profiling_history_size = 100;
+        static float elapsed_time_history[profiling_history_size];
+        static float elapsed_time_running_average = 1;
+        static unsigned profiling_history_index = 0;
+        elapsed_time_history[profiling_history_index] = elapsed_time;
+        elapsed_time_running_average +=
+            (elapsed_time - elapsed_time_running_average) * 0.1f;
+        profiling_history_index =
+            (profiling_history_index + 1) % profiling_history_size;
+
+        static bool show_profiler_window = true;
+        if (show_profiler_window)
+        {
+            ImGui::Begin("Profiler", &show_profiler_window);
+            ImGui::Text("avg: %.2f ms", elapsed_time_running_average * 1000);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            // ImDrawList API uses screen coordinates!
+            ImVec2 offset = ImGui::GetCursorScreenPos();
+            ImVec2 size = ImGui::GetContentRegionAvail();
+            float delta_x = size.x / profiling_history_size;
+            float delta_y = -size.y / elapsed_time_running_average * 0.5f;
+            offset.y += size.y;
+
+            ImVec2 previous = ImVec2(
+                offset.x,
+                offset.y +
+                elapsed_time_history[profiling_history_size - 1] * delta_y
+            );
+            for (auto i = 0u; i < profiling_history_size; ++i) {
+                offset.x += delta_x;
+                ImVec2 point = ImVec2(
+                    offset.x,
+                    offset.y + elapsed_time_history[i] * delta_y
+                );
+                if (i != profiling_history_index) {
+                    draw_list->AddLine(
+                        previous, point, IM_COL32(255, 255, 0, 255), 2.0f
+                    );
+                }
+                previous = point;
+            }
+            ImGui::End();
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
