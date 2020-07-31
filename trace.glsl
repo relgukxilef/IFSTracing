@@ -10,6 +10,7 @@ const uint queue_size = 16;
 uint recursions[queue_size];
 float depths[queue_size];
 mat3x4 matrices[queue_size];
+vec3 normals[queue_size];
 
 uniform vec2 pixel_size;
 uniform vec2 pixel_offset;
@@ -94,10 +95,12 @@ struct element {
     uint recursion;
     float depth;
     mat3x4 matrix;
+    vec3 normal;
 };
 
 void set(uint i, element e) {
     matrices[i] = e.matrix;
+    normals[i] = e.normal;
     recursions[i] = e.recursion;
     depths[i] = e.depth;
 }
@@ -105,6 +108,7 @@ void set(uint i, element e) {
 element get(uint i) {
     element e;
     e.matrix = matrices[i];
+    e.normal = normals[i];
     e.recursion = recursions[i];
     e.depth = depths[i];
     return e;
@@ -189,6 +193,7 @@ trace_result trace(vec3 from, vec3 direction) {
     start.matrix = mat3x4(1);
     start.recursion = 0;
     start.depth = 0;
+    start.normal = vec3(0);
 
     heap_insert(start);
 
@@ -207,6 +212,11 @@ trace_result trace(vec3 from, vec3 direction) {
             );
 
             if (i.hit) {
+                if (e.recursion + 5 > max_depth) {
+                    // average normals
+                    // TODO: rotation?
+                    child.normal += i.position;
+                }
                 if (e.recursion < max_depth) {
                     heap_insert(child);
                 } else {
@@ -219,6 +229,7 @@ trace_result trace(vec3 from, vec3 direction) {
         }
     }
 
+    result.e.normal = normalize(result.e.normal);
     return result;
 }
 
@@ -253,26 +264,25 @@ void main(void) {
         vec3 position = vec4(t.i.position * 1.01, 1.0) * inverse_matrix;
 
         vec3 light_direction = normalize(light - position);
-        vec3 reflection_direction = reflect(light_direction, t.i.position);
-        float diffuse = 0;
+        vec3 reflection_direction = reflect(light_direction, t.e.normal);
+        float diffuse = dot(light_direction, t.e.normal);
         float specular =
             pow(max(dot(normalize(direction), reflection_direction), 0), 100);
         float ambient = 0.05;
 
         float lighting = 0;
 
-        if (dot(light_direction, t.i.position) > 0) {
-            diffuse = dot(light_direction, t.i.position);
+        if (diffuse > 0) {
             trace_result shadow = trace(
                 position,
                 light - position
             );
-            lighting = mix(diffuse * 0.5 + specular * 0.5, 0, shadow.i.hit);
+            lighting = mix(
+                diffuse * 0.5 + specular * 0.5, 0, shadow.i.depth < max_depth
+            );
         }
 
         shade *= lighting + ambient;
-
-        //shade = position * 0.5 + 0.5;
     }
 
     shade = pow(shade, vec3(1.0 / 2.2));
