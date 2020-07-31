@@ -233,12 +233,13 @@ mat3x4 projective_inverse(mat3x4 m) {
 }
 
 void main(void) {
+    // TODO: load light position and material from file
     uvec2 position = gl_GlobalInvocationID.xy;
     vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
     vec3 direction = (
         model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
     ).xyz;
-    vec3 light = vec3(0, 1.0, -1.0);
+    vec3 light = vec3(1, 1.0, 1.0);
 
     float max_depth = 1e12;
 
@@ -251,18 +252,24 @@ void main(void) {
 
         vec3 position = vec4(t.i.position * 1.01, 1.0) * inverse_matrix;
 
-        trace_result shadow = trace(
-            position,
-            light - position
-        );
-
         vec3 light_direction = normalize(light - position);
         vec3 reflection_direction = reflect(light_direction, t.i.position);
-        float diffuse = max(dot(light_direction, t.i.position), 0);
+        float diffuse = 0;
         float specular =
             pow(max(dot(normalize(direction), reflection_direction), 0), 100);
         float ambient = 0.05;
-        float lighting = mix(diffuse * 0.5 + specular * 0.5, 0, shadow.i.hit);
+
+        float lighting = 0;
+
+        if (dot(light_direction, t.i.position) > 0) {
+            diffuse = dot(light_direction, t.i.position);
+            trace_result shadow = trace(
+                position,
+                light - position
+            );
+            lighting = mix(diffuse * 0.5 + specular * 0.5, 0, shadow.i.hit);
+        }
+
         shade *= lighting + ambient;
 
         //shade = position * 0.5 + 0.5;
