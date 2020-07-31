@@ -153,7 +153,8 @@ int main()
         color, depths, recursions, froms, directions, lights
     };
 
-    fractal f("Sierpinski Triangle.json");
+    //fractal f("Sierpinski Triangle.json");
+    fractal f("Sierpinski Carpet.json");
 
     auto trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
