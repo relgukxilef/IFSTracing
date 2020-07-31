@@ -16,9 +16,12 @@ uniform vec2 pixel_size;
 uniform vec2 pixel_offset;
 uniform uint max_depth;
 
-uniform float inverse_radius;
-
 uniform mat4 model_matrix;
+
+uniform vec3 light_position;
+uniform vec3 material_coefficients;
+uniform vec3 material_color;
+uniform float material_glossiness;
 
 layout(binding = 1) readonly buffer MapsInverse {
     mat3x4 maps_inverse[];
@@ -259,6 +262,7 @@ void main(void) {
     vec3 shade = vec3(1);
 
     if (t.i.depth < max_depth) {
+        shade = material_color;
         mat3x4 inverse_matrix = projective_inverse(t.e.matrix);
 
         vec3 position = vec4(t.i.position * 1.01, 1.0) * inverse_matrix;
@@ -266,9 +270,10 @@ void main(void) {
         vec3 light_direction = normalize(light - position);
         vec3 reflection_direction = reflect(light_direction, t.e.normal);
         float diffuse = dot(light_direction, t.e.normal);
-        float specular =
-            pow(max(dot(normalize(direction), reflection_direction), 0), 100);
-        float ambient = 0.05;
+        float specular = pow(
+            max(dot(normalize(direction), reflection_direction), 0),
+            material_glossiness
+        );
 
         float lighting = 0;
 
@@ -278,11 +283,13 @@ void main(void) {
                 light - position
             );
             lighting = mix(
-                diffuse * 0.5 + specular * 0.5, 0, shadow.i.depth < max_depth
+                diffuse * material_coefficients.x +
+                specular * material_coefficients.y,
+                0, shadow.i.depth < max_depth
             );
         }
 
-        shade *= lighting + ambient;
+        shade *= lighting + material_coefficients.z;
     }
 
     shade = pow(shade, vec3(1.0 / 2.2));

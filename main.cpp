@@ -24,9 +24,6 @@ using namespace ge1;
 using namespace glm;
 
 unsigned window_width, window_height, max_depth;
-GLuint pixel_size_uniform, pixel_offset_uniform;
-GLuint color_uniform;
-GLuint max_depth_uniform, inverse_radius_uniform;
 GLuint framebuffer = 0, color_texture = 0;
 mat4 model_matrix;
 vec2 rotation;
@@ -35,15 +32,10 @@ vec3 translation;
 vec2 previous_mouse_position;
 
 struct {
-    GLuint recursions, depths, froms, directions, lights, model_matrix;
+    GLuint model_matrix, light_position, material_coefficients;
+    GLuint material_color, material_glossiness;
+    GLuint pixel_size, pixel_offset, color, max_depth;
 } uniforms;
-
-union {
-    struct {
-        GLuint recursions, depths, froms, directions, lights;
-    };
-    GLuint names[5] = {0};
-} textures;
 
 enum struct operation {
     none, rotate, pan, zoom
@@ -113,10 +105,10 @@ void window_size_callback(GLFWwindow*, int width, int height) {
     glViewport(0, 0, width, height);
 
     glUniform2f(
-        pixel_size_uniform, 1.0f / window_width, aspect_ratio / window_height
+        uniforms.pixel_size, 1.0f / window_width, aspect_ratio / window_height
     );
     glUniform2f(
-        pixel_offset_uniform, window_width * 0.5f, window_height * 0.5f
+        uniforms.pixel_offset, window_width * 0.5f, window_height * 0.5f
     );
 
     glDeleteFramebuffers(1, &framebuffer);
@@ -166,16 +158,15 @@ int main()
     auto trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
         trace_program, {
-            {"pixel_size", &pixel_size_uniform},
-            {"pixel_offset", &pixel_offset_uniform},
-            {"max_depth", &max_depth_uniform},
-            {"inverse_radius", &inverse_radius_uniform},
-            {"color", &color_uniform},
-            {"recursions", &uniforms.recursions},
-            {"depths", &uniforms.depths},
-            {"froms", &uniforms.froms},
-            {"directions", &uniforms.directions},
-            {"lights", &uniforms.lights},
+            {"pixel_size", &uniforms.pixel_size},
+            {"pixel_offset", &uniforms.pixel_offset},
+            {"max_depth", &uniforms.max_depth},
+            {"color", &uniforms.color},
+            {"model_matrix", &uniforms.model_matrix},
+            {"light_position", &uniforms.light_position},
+            {"material_coefficients", &uniforms.material_coefficients},
+            {"material_color", &uniforms.material_color},
+            {"material_glossiness", &uniforms.material_glossiness},
             {"model_matrix", &uniforms.model_matrix},
         }
     );
@@ -189,16 +180,15 @@ int main()
     glUseProgram(trace_program);
     max_depth = 3;
 
-    float radius = 0.5;
-
-    glUniform1ui(max_depth_uniform, max_depth);
-    glUniform1f(inverse_radius_uniform, 1.0f / radius);
-    glUniform1i(color_uniform, color);
-    glUniform1i(uniforms.recursions, recursions);
-    glUniform1i(uniforms.depths, depths);
-    glUniform1i(uniforms.froms, froms);
-    glUniform1i(uniforms.directions, directions);
-    glUniform1i(uniforms.lights, lights);
+    glUniform1ui(uniforms.max_depth, max_depth);
+    glUniform1i(uniforms.color, color);
+    glUniform3fv(uniforms.light_position, 1, glm::value_ptr(f.light_position));
+    glUniform3fv(
+        uniforms.material_coefficients, 1,
+        glm::value_ptr(f.coefficients)
+    );
+    glUniform3fv(uniforms.material_color, 1,glm::value_ptr(f.color));
+    glUniform1f(uniforms.material_glossiness, f.glossiness);
 
     glfwSetCursorPosCallback(window, &cursor_position_callback);
     glfwSetMouseButtonCallback(window, &mouse_button_callback);
@@ -231,31 +221,6 @@ int main()
             0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8
         );
 
-        glBindImageTexture(
-            recursions, textures.recursions,
-            0, GL_FALSE, 0, GL_READ_WRITE, GL_R8UI
-        );
-
-        glBindImageTexture(
-            depths, textures.depths,
-            0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F
-        );
-
-        glBindImageTexture(
-            froms, textures.froms,
-            0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F
-        );
-
-        glBindImageTexture(
-            directions, textures.directions,
-            0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F
-        );
-
-        glBindImageTexture(
-            lights, textures.lights,
-            0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F
-        );
-
         glUniformMatrix4fv(
             uniforms.model_matrix, 1, GL_FALSE, value_ptr(model_matrix)
         );
@@ -280,7 +245,7 @@ int main()
         if (ImGui::SliderInt(
             "Recursion Depth", reinterpret_cast<int*>(&max_depth), 0, 10
         )) {
-            glUniform1ui(max_depth_uniform, max_depth);
+            glUniform1ui(uniforms.max_depth, max_depth);
         }
         ImGui::End();
 
