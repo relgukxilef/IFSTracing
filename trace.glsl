@@ -37,6 +37,16 @@ vec3 project(vec3 point, vec3 vector) {
     return dot(point, vector) * vector;
 }
 
+mat4x3 projective_inverse(mat4x3 m) {
+    mat3 a = mat3(m);
+    vec3 t = m[3];
+    a = inverse(a);
+    return mat4x3(a[0], a[1], a[2], -a * t);
+}
+mat3x4 projective_inverse(mat3x4 m) {
+    return transpose(projective_inverse(transpose(m)));
+}
+
 struct intersection_result {
     vec3 position;
     float depth;
@@ -77,6 +87,8 @@ intersection_result intersect(
 
         result.hit = circle_depth - depth_offset > 0;
         result.depth = circle_depth - depth_offset;
+
+        // TODO: depth is not scaled uniformly for non-orthonormal maps
 
         if (result.hit) {
             result.position = from + result.depth * direction;
@@ -217,8 +229,10 @@ trace_result trace(vec3 from, vec3 direction) {
             if (i.hit) {
                 if (e.recursion + 5 > max_depth) {
                     // average normals
-                    // TODO: rotation?
-                    child.normal += i.position;
+                    // TODO: make efficient
+                    child.normal +=
+                        normalize(vec4(i.position, 0.0) *
+                        projective_inverse(child.matrix));
                 }
                 if (e.recursion < max_depth) {
                     heap_insert(child);
@@ -234,16 +248,6 @@ trace_result trace(vec3 from, vec3 direction) {
 
     result.e.normal = normalize(result.e.normal);
     return result;
-}
-
-mat4x3 projective_inverse(mat4x3 m) {
-    mat3 a = mat3(m);
-    vec3 t = m[3];
-    a = inverse(a);
-    return mat4x3(a[0], a[1], a[2], -a * t);
-}
-mat3x4 projective_inverse(mat3x4 m) {
-    return transpose(projective_inverse(transpose(m)));
 }
 
 void main(void) {

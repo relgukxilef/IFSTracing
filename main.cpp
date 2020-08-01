@@ -154,7 +154,7 @@ int main()
     };
 
     //fractal f("Sierpinski Triangle.json");
-    fractal f("Sierpinski Carpet.json");
+    fractal f("Koch Curve.json");
 
     auto trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
