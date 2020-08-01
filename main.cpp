@@ -37,6 +37,12 @@ struct {
     GLuint pixel_size, pixel_offset, color, max_depth;
 } uniforms;
 
+enum image_units : GLuint {
+    color
+};
+
+GLuint trace_program;
+
 enum struct operation {
     none, rotate, pan, zoom
 } current_operation = operation::none;
@@ -120,6 +126,27 @@ void window_size_callback(GLFWwindow*, int width, int height) {
     );
 }
 
+void set_fractal(fractal f) {
+    auto maps_inverse_buffer = create_buffer<const mat3x4>(
+        GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
+        {f.mappings.begin(), f.mappings.end()}
+    );
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
+
+    glUseProgram(trace_program);
+    max_depth = 3;
+
+    glUniform1ui(uniforms.max_depth, max_depth);
+    glUniform1i(uniforms.color, image_units::color);
+    glUniform3fv(uniforms.light_position, 1, glm::value_ptr(f.light_position));
+    glUniform3fv(
+        uniforms.material_coefficients, 1,
+        glm::value_ptr(f.coefficients)
+    );
+    glUniform3fv(uniforms.material_color, 1,glm::value_ptr(f.color));
+    glUniform1f(uniforms.material_glossiness, f.glossiness);
+}
+
 int main()
 {
     GLFWwindow* window;
@@ -149,14 +176,9 @@ int main()
     io = &ImGui::GetIO();
     io->Fonts->AddFontFromFileTTF("fonts/Lato-Regular.ttf", 20.0f);
 
-    enum image_units : GLuint {
-        color, depths, recursions, froms, directions, lights
-    };
-
     //fractal f("Sierpinski Triangle.json");
-    fractal f("Koch Curve.json");
 
-    auto trace_program = compile_program("trace.glsl", {});
+    trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
         trace_program, {
             {"pixel_size", &uniforms.pixel_size},
@@ -172,24 +194,7 @@ int main()
         }
     );
 
-    auto maps_inverse_buffer = create_buffer<const mat3x4>(
-        GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
-        {f.mappings.begin(), f.mappings.end()}
-    );
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, maps_inverse_buffer);
-
-    glUseProgram(trace_program);
-    max_depth = 3;
-
-    glUniform1ui(uniforms.max_depth, max_depth);
-    glUniform1i(uniforms.color, color);
-    glUniform3fv(uniforms.light_position, 1, glm::value_ptr(f.light_position));
-    glUniform3fv(
-        uniforms.material_coefficients, 1,
-        glm::value_ptr(f.coefficients)
-    );
-    glUniform3fv(uniforms.material_color, 1,glm::value_ptr(f.color));
-    glUniform1f(uniforms.material_glossiness, f.glossiness);
+    set_fractal(fractal("Koch Curve.json"));
 
     glfwSetCursorPosCallback(window, &cursor_position_callback);
     glfwSetMouseButtonCallback(window, &mouse_button_callback);
@@ -242,7 +247,24 @@ int main()
             GL_COLOR_BUFFER_BIT, GL_NEAREST
         );
 
-        ImGui::Begin("Settings");
+        ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_MenuBar);
+        if (ImGui::BeginMenuBar())
+        {
+            if (ImGui::BeginMenu("Open"))
+            {
+                for (const char* file : {
+                    "Sierpinski Tetrahedron", "Sierpinski Carpet", "Koch Curve",
+                    "Dragon Curve"
+                }) {
+                    if (ImGui::MenuItem(file)) {
+                        set_fractal(fractal((string(file) + ".json").c_str()));
+                        break;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
         if (ImGui::SliderInt(
             "Recursion Depth", reinterpret_cast<int*>(&max_depth), 0, 10
         )) {
