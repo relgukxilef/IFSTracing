@@ -50,7 +50,7 @@ mat3x4 projective_inverse(mat3x4 m) {
 }
 
 struct intersection_result {
-    float depth;
+    float depth_squared;
     bool hit;
 };
 
@@ -68,7 +68,7 @@ intersection_result intersect(
     if (dot(offset, offset) < 1.0) {
         // from is inside sphere
         result.hit = true;
-        result.depth = 0;
+        result.depth_squared = 0;
         return result;
     }
     if (dot(direction, offset) > 0.0) {
@@ -87,17 +87,21 @@ intersection_result intersect(
 
     if (result.hit) {
         // ray hits circle orthogonal to ray
-        float distance = length(offset);
-        float depth_offset = sqrt(1 - closest_squared);
-        float circle_depth = sqrt(distance * distance - closest_squared);
+        float distance_squared = dot(offset, offset);
+        float depth_offset_squared = 1 - closest_squared;
+        float circle_depth_squared = distance_squared - closest_squared;
 
-        result.hit = circle_depth - depth_offset > 0;
-        result.depth = circle_depth - depth_offset;
+        result.hit = circle_depth_squared > depth_offset_squared;
+        result.depth_squared = (
+            circle_depth_squared + depth_offset_squared -
+            2 * sqrt(circle_depth_squared * depth_offset_squared)
+        );
 
         if (result.hit) {
             // make depth a ratio of the direction length
             // to avoid non-uniform scaling with non-orthonormal mappings
-            result.depth *= direction_length_inverse;
+            result.depth_squared *=
+                direction_length_inverse * direction_length_inverse;
         }
     }
 
@@ -174,6 +178,7 @@ element heap_pop() {
         uint left = heap_child(root);
         uint right = left + 1;
 
+        // replacing ifs with mix isn't worth it
         if (left < size) {
             if (
                 depths[left] < depths[smallest]
@@ -207,7 +212,7 @@ struct trace_result {
 
 trace_result trace(vec3 from, vec3 direction) {
     trace_result result;
-    result.i.depth = 1e12;
+    result.i.depth_squared = 1e12;
 
     size = 0;
 
@@ -219,7 +224,7 @@ trace_result trace(vec3 from, vec3 direction) {
 
     heap_insert(e);
 
-    while (size > 0 && e.depth < result.i.depth) {
+    while (size > 0 && e.depth < result.i.depth_squared) {
         e = heap_pop();
         //steps++;
 
@@ -237,8 +242,9 @@ trace_result trace(vec3 from, vec3 direction) {
             );
 
             if (i.hit) {
-                child.depth = i.depth;
-                vec3 position = child_from + child_direction * i.depth;
+                child.depth = i.depth_squared;
+                vec3 position =
+                    child_from + child_direction * sqrt(i.depth_squared);
                 if (e.recursion + 5 > max_depth) {
                     // average normals
                     // TODO: make efficient
@@ -248,7 +254,7 @@ trace_result trace(vec3 from, vec3 direction) {
                 if (e.recursion < max_depth && size < queue_size) {
                     heap_insert(child);
                 } else {
-                    if (i.depth < result.i.depth) {
+                    if (i.depth_squared < result.i.depth_squared) {
                         result.e = child;
                         result.i = i;
                         result.p = position;
@@ -263,7 +269,6 @@ trace_result trace(vec3 from, vec3 direction) {
 }
 
 void main(void) {
-    // TODO: load light position and material from file
     uvec2 position = gl_GlobalInvocationID.xy;
     vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
     vec3 direction = (
@@ -277,7 +282,7 @@ void main(void) {
 
     vec3 shade = vec3(1);
 
-    if (t.i.depth < max_depth) {
+    if (t.i.depth_squared < max_depth) {
         shade = material_color;
         mat3x4 inverse_matrix = projective_inverse(t.e.matrix);
 
@@ -301,7 +306,7 @@ void main(void) {
             lighting = mix(
                 diffuse * material_coefficients.x +
                 specular * material_coefficients.y,
-                0, shadow.i.depth < max_depth
+                0, shadow.i.depth_squared < max_depth
             );
         }
 
