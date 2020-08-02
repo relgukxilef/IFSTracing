@@ -55,9 +55,14 @@ struct intersection_result {
     bool hit;
 };
 
+/*
+Calculates the intersection of a ray with a unit sphere at the origin.
+*/
 intersection_result intersect(
     vec3 from, vec3 direction
 ) {
+    // TODO: maybe split up into intersection_test (for shadow),
+    // intersection_depth (for nodes) and intersection_position
     intersection_result result;
     vec3 offset = from;
 
@@ -75,7 +80,8 @@ intersection_result intersect(
     }
 
     // TODO: avoid normalization
-    direction = normalize(direction);
+    float direction_length_inverse = inversesqrt(dot(direction, direction));
+    direction *= direction_length_inverse;
 
     vec3 closest = project(-offset, direction) + offset;
     float closest_squared = dot(closest, closest);
@@ -90,10 +96,11 @@ intersection_result intersect(
         result.hit = circle_depth - depth_offset > 0;
         result.depth = circle_depth - depth_offset;
 
-        // TODO: depth is not scaled uniformly for non-orthonormal maps
-
         if (result.hit) {
             result.position = from + result.depth * direction;
+            // make depth a ratio of the direction length
+            // to avoid non-uniform scaling with non-orthonormal mappings
+            result.depth *= direction_length_inverse;
         }
     }
 
@@ -232,7 +239,6 @@ trace_result trace(vec3 from, vec3 direction) {
             );
 
             if (i.hit) {
-                i.depth /= length(child_direction);
                 child.depth = i.depth;
                 if (e.recursion + 5 > max_depth) {
                     // average normals
