@@ -39,6 +39,9 @@ vec3 project(vec3 point, vec3 vector) {
     return dot(point, vector) * vector;
 }
 
+/*
+Fast inverse for homogenous matrices.
+*/
 mat4x3 projective_inverse(mat4x3 m) {
     mat3 a = mat3(m);
     vec3 t = m[3];
@@ -50,6 +53,7 @@ mat3x4 projective_inverse(mat3x4 m) {
 }
 
 struct intersection_result {
+    // squared depth is enough to find closest hit but faster to calculate
     float depth_squared;
     bool hit;
 };
@@ -65,43 +69,45 @@ intersection_result intersect(
     intersection_result result;
     vec3 offset = from;
 
-    if (dot(offset, offset) < 1.0) {
+    if (dot(from, from) < 1.0) {
         // from is inside sphere
         result.hit = true;
         result.depth_squared = 0;
         return result;
     }
-    if (dot(direction, offset) > 0.0) {
+    if (dot(direction, from) > 0.0) {
         // ray points away from sphere
         result.hit = false;
         return result;
     }
 
-    // TODO: avoid normalization
-    float direction_length_inverse = inversesqrt(dot(direction, direction));
-    direction *= direction_length_inverse;
+    float direction_squared = dot(direction, direction);
+    float direction_squared_squared = direction_squared * direction_squared;
 
-    vec3 closest = project(-offset, direction) + offset;
-    float closest_squared = dot(closest, closest);
-    result.hit = closest_squared < 1.0;
+    // * d^2
+    vec3 closest = project(-from, direction) + from * direction_squared;
+    float closest_squared = dot(closest, closest); // * d^4
+    result.hit = closest_squared < direction_squared_squared;
 
     if (result.hit) {
         // ray hits circle orthogonal to ray
-        float distance_squared = dot(offset, offset);
-        float depth_offset_squared = 1 - closest_squared;
-        float circle_depth_squared = distance_squared - closest_squared;
+        // distance between camera and center of sphere
+        float distance_squared = dot(from, from);
+        float depth_offset_squared = // * d^4
+            direction_squared_squared - closest_squared;
+        float circle_depth_squared = // * d^4
+            distance_squared * direction_squared_squared - closest_squared;
 
         result.hit = circle_depth_squared > depth_offset_squared;
-        result.depth_squared = (
-            circle_depth_squared + depth_offset_squared -
-            2 * sqrt(circle_depth_squared * depth_offset_squared)
-        );
 
         if (result.hit) {
+            // TODO: avoid divisions
             // make depth a ratio of the direction length
             // to avoid non-uniform scaling with non-orthonormal mappings
-            result.depth_squared *=
-                direction_length_inverse * direction_length_inverse;
+            result.depth_squared = (
+                circle_depth_squared + depth_offset_squared -
+                2 * sqrt(circle_depth_squared * depth_offset_squared)
+            ) / (direction_squared_squared * direction_squared);
         }
     }
 
