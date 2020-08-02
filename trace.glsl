@@ -50,7 +50,6 @@ mat3x4 projective_inverse(mat3x4 m) {
 }
 
 struct intersection_result {
-    vec3 position;
     float depth;
     bool hit;
 };
@@ -70,7 +69,6 @@ intersection_result intersect(
         // from is inside sphere
         result.hit = true;
         result.depth = 0;
-        result.position = from;
         return result;
     }
     if (dot(direction, offset) > 0.0) {
@@ -97,7 +95,6 @@ intersection_result intersect(
         result.depth = circle_depth - depth_offset;
 
         if (result.hit) {
-            result.position = from + result.depth * direction;
             // make depth a ratio of the direction length
             // to avoid non-uniform scaling with non-orthonormal mappings
             result.depth *= direction_length_inverse;
@@ -205,6 +202,7 @@ element heap_pop() {
 struct trace_result {
     element e;
     intersection_result i;
+    vec3 p;
 };
 
 trace_result trace(vec3 from, vec3 direction) {
@@ -231,20 +229,21 @@ trace_result trace(vec3 from, vec3 direction) {
             element child = e;
             child.recursion++;
             child.matrix = mat3x4(mat4(e.matrix) * mat4(map));
+            vec3 child_from = vec4(from, 1.0) * child.matrix;
             vec3 child_direction = direction * mat3(child.matrix);
 
             intersection_result i = intersect(
-                vec4(from, 1.0) * child.matrix,
-                child_direction
+                child_from, child_direction
             );
 
             if (i.hit) {
                 child.depth = i.depth;
+                vec3 position = child_from + child_direction * i.depth;
                 if (e.recursion + 5 > max_depth) {
                     // average normals
                     // TODO: make efficient
                     child.normal +=
-                        normalize(i.position * inverse(mat3(child.matrix)));
+                        normalize(position * inverse(mat3(child.matrix)));
                 }
                 if (e.recursion < max_depth && size < queue_size) {
                     heap_insert(child);
@@ -252,6 +251,7 @@ trace_result trace(vec3 from, vec3 direction) {
                     if (i.depth < result.i.depth) {
                         result.e = child;
                         result.i = i;
+                        result.p = position;
                     }
                 }
             }
@@ -281,7 +281,7 @@ void main(void) {
         shade = material_color;
         mat3x4 inverse_matrix = projective_inverse(t.e.matrix);
 
-        vec3 position = vec4(t.i.position * 1.01, 1.0) * inverse_matrix;
+        vec3 position = vec4(t.p * 1.01, 1.0) * inverse_matrix;
 
         vec3 light_direction = normalize(light - position);
         vec3 reflection_direction = reflect(light_direction, t.e.normal);
@@ -306,6 +306,8 @@ void main(void) {
         }
 
         shade *= lighting + material_coefficients.z;
+
+        //shade = t.p * 0.5 + 0.5;
     }
 
     //shade = vec3(min(float(steps), 20) / 20);
