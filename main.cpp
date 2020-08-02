@@ -194,7 +194,7 @@ int main()
         }
     );
 
-    set_fractal(fractal("Koch Curve.json"));
+    set_fractal(fractal("Sierpinski Tetrahedron.json"));
 
     glfwSetCursorPosCallback(window, &cursor_position_callback);
     glfwSetMouseButtonCallback(window, &mouse_button_callback);
@@ -254,7 +254,7 @@ int main()
             {
                 for (const char* file : {
                     "Sierpinski Tetrahedron", "Sierpinski Carpet", "Koch Curve",
-                    "Dragon Curve"
+                    "Dragon Curve", "Jerusalem Cube"
                 }) {
                     if (ImGui::MenuItem(file)) {
                         set_fractal(fractal((string(file) + ".json").c_str()));

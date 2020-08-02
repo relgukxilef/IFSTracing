@@ -226,13 +226,16 @@ trace_result trace(vec3 from, vec3 direction) {
                 vec4(direction, 0.0) * child.matrix
             );
 
+            // TODO: make efficient
+            mat3x4 inverse_matrix = projective_inverse(child.matrix);
+            i.depth = length(direction * i.depth * mat3(inverse_matrix));
+
             if (i.hit) {
                 if (e.recursion + 5 > max_depth) {
                     // average normals
                     // TODO: make efficient
                     child.normal +=
-                        normalize(vec4(i.position, 0.0) *
-                        projective_inverse(child.matrix));
+                        normalize(vec4(i.position, 0.0) * inverse_matrix);
                 }
                 if (e.recursion < max_depth) {
                     heap_insert(child);
