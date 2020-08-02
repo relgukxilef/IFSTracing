@@ -29,6 +29,8 @@ layout(binding = 1) readonly buffer MapsInverse {
 
 uint size;
 
+uint steps = 0;
+
 /*
 Calculate projection of point onto vector
 multiplied by the squared length of vector.
@@ -204,40 +206,41 @@ trace_result trace(vec3 from, vec3 direction) {
 
     size = 0;
 
-    element start;
-    start.matrix = mat3x4(1);
-    start.recursion = 0;
-    start.depth = 0;
-    start.normal = vec3(0);
+    element e;
+    e.matrix = mat3x4(1);
+    e.recursion = 0;
+    e.depth = 0;
+    e.normal = vec3(0);
 
-    heap_insert(start);
+    heap_insert(e);
 
-    while (size > 0) {
-        element e = heap_pop();
+    while (size > 0 && e.depth < result.i.depth) {
+        e = heap_pop();
+        //steps++;
 
         for (uint m = 0; m < maps_inverse.length(); m++) {
+            // TODO: maybe swap splitting and intersection
             mat3x4 map = maps_inverse[m];
             element child = e;
             child.recursion++;
             child.matrix = mat3x4(mat4(e.matrix) * mat4(map));
+            vec3 child_direction = direction * mat3(child.matrix);
 
             intersection_result i = intersect(
                 vec4(from, 1.0) * child.matrix,
-                vec4(direction, 0.0) * child.matrix
+                child_direction
             );
 
-            // TODO: make efficient
-            mat3x4 inverse_matrix = projective_inverse(child.matrix);
-            i.depth = length(direction * i.depth * mat3(inverse_matrix));
-
             if (i.hit) {
+                i.depth /= length(child_direction);
+                child.depth = i.depth;
                 if (e.recursion + 5 > max_depth) {
                     // average normals
                     // TODO: make efficient
                     child.normal +=
-                        normalize(vec4(i.position, 0.0) * inverse_matrix);
+                        normalize(i.position * inverse(mat3(child.matrix)));
                 }
-                if (e.recursion < max_depth) {
+                if (e.recursion < max_depth && size < queue_size) {
                     heap_insert(child);
                 } else {
                     if (i.depth < result.i.depth) {
@@ -298,6 +301,8 @@ void main(void) {
 
         shade *= lighting + material_coefficients.z;
     }
+
+    //shade = vec3(min(float(steps), 20) / 20);
 
     shade = pow(shade, vec3(1.0 / 2.2));
 
