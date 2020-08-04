@@ -280,7 +280,6 @@ void main(void) {
     vec3 direction = (
         model_matrix * vec4((vec2(position) - pixel_offset) * pixel_size, -1, 0)
     ).xyz;
-    vec3 light = vec3(1, 1.0, 1.0);
 
     float max_depth = 1e12;
 
@@ -294,7 +293,7 @@ void main(void) {
 
         vec3 position = vec4(t.p * 1.01, 1.0) * inverse_matrix;
 
-        vec3 light_direction = normalize(light - position);
+        vec3 light_direction = normalize(light_position - position);
         vec3 reflection_direction = reflect(light_direction, t.e.normal);
         float diffuse = dot(light_direction, t.e.normal);
         float specular = pow(
@@ -307,7 +306,7 @@ void main(void) {
         if (diffuse > 0) {
             trace_result shadow = trace(
                 position,
-                light - position
+                light_position - position
             );
             lighting = mix(
                 diffuse * material_coefficients.x +
