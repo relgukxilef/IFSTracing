@@ -274,6 +274,45 @@ trace_result trace(vec3 from, vec3 direction) {
     return result;
 }
 
+/*
+Testing whether there is an intersection is cheap.
+*/
+bool shadow_trace(vec3 from, vec3 direction) {
+    size = 1;
+
+    matrices[0] = mat3x4(1);
+    recursions[0] = 0;
+
+    while (size > 0) {
+        size--;
+        uint recursion = recursions[size];
+        mat3x4 matrix = matrices[size];
+        for (uint m = 0; m < maps_inverse.length(); m++) {
+            mat3x4 map = maps_inverse[m];
+            uint child_recursion = recursion + 1;
+            mat3x4 child_matrix = mat3x4(mat4(matrix) * mat4(map));
+            vec3 child_from = vec4(from, 1.0) * child_matrix;
+            vec3 child_direction = direction * mat3(child_matrix);
+
+            intersection_result i = intersect(
+                child_from, child_direction
+            );
+
+            if (i.hit) {
+                if (recursion < max_depth && size < queue_size) {
+                    recursions[size] = child_recursion;
+                    matrices[size] = child_matrix;
+                    size++;
+                } else {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 void main(void) {
     uvec2 position = gl_GlobalInvocationID.xy;
     vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
@@ -282,6 +321,8 @@ void main(void) {
     ).xyz;
 
     float max_depth = 1e12;
+
+    // performing shadow_trace first is not worth it
 
     trace_result t = trace(from, direction);
 
@@ -304,14 +345,14 @@ void main(void) {
         float lighting = 0;
 
         if (diffuse > 0) {
-            trace_result shadow = trace(
+            bool shadow = shadow_trace(
                 position,
                 light_position - position
             );
             lighting = mix(
                 diffuse * material_coefficients.x +
                 specular * material_coefficients.y,
-                0, shadow.i.depth_squared < max_depth
+                0, shadow
             );
         }
 
