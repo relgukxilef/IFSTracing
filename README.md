@@ -1,4 +1,6 @@
 Felix Kugler (01526144)
+186.186 Fraktale
+UE 066 932
 
 Aufgabe 1.3 Ray-Tracing von IFS
 
