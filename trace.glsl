@@ -1,34 +1,48 @@
 #version 460
 
+// a group size of 32 is optimal for the shaders occupancy
 layout(local_size_x = 8, local_size_y = 4, local_size_z = 1) in;
 layout(std430) buffer;
 
 layout(rgba8) uniform writeonly image2D color;
 
+// max heap size
 const uint queue_size = 16;
 
+// heap structure
+// recursion depth to stop
 uint recursions[queue_size];
+// squared depths of intersection with node to sort elements
 float depths[queue_size];
+// matrix from world space to node space
 mat3x4 matrices[queue_size];
+// accumulated normals for "anti-aliasing"
 vec3 normals[queue_size];
 
+// size of a pixel on the camera plane
 uniform vec2 pixel_size;
+// position of the bottom left corner on the camera plane
 uniform vec2 pixel_offset;
+// max number of recursions
 uniform uint max_depth;
+
+// number of elements on heap
+uint size;
 
 uniform mat4 model_matrix;
 
+// material properties
 uniform vec3 light_position;
 uniform vec3 material_coefficients;
 uniform vec3 material_color;
 uniform float material_glossiness;
 
+// list of affine functions describing the fractal
 layout(binding = 1) readonly buffer MapsInverse {
     mat3x4 maps_inverse[];
 };
 
-uint size;
-
+// Counter for number of iteration for debugging
 uint steps = 0;
 
 /*
@@ -64,8 +78,6 @@ Calculates the intersection of a ray with a unit sphere at the origin.
 intersection_result intersect(
     vec3 from, vec3 direction
 ) {
-    // TODO: maybe split up into intersection_test (for shadow),
-    // intersection_depth (for nodes) and intersection_position
     intersection_result result;
     vec3 offset = from;
 
@@ -81,6 +93,7 @@ intersection_result intersect(
         return result;
     }
 
+    // divisions and normalizations are postponed
     float direction_squared = dot(direction, direction);
     float direction_squared_squared = direction_squared * direction_squared;
 
@@ -101,7 +114,6 @@ intersection_result intersect(
         result.hit = circle_depth_squared > depth_offset_squared;
 
         if (result.hit) {
-            // TODO: avoid divisions
             // make depth a ratio of the direction length
             // to avoid non-uniform scaling with non-orthonormal mappings
             result.depth_squared = (
@@ -114,14 +126,24 @@ intersection_result intersect(
     return result;
 }
 
+/*
+Get first child of node in heap.
+Second child is on next index.
+*/
 uint heap_child(uint parent) {
     return parent * 2 + 1;
 }
 
+/*
+Get parent of node in heap.
+*/
 uint heap_parent(uint child) {
     return (child - 1) / 2;
 }
 
+/*
+Element on the heap.
+*/
 struct element {
     uint recursion;
     float depth;
@@ -129,13 +151,18 @@ struct element {
     vec3 normal;
 };
 
+/*
+Write element into heap.
+*/
 void set(uint i, element e) {
     matrices[i] = e.matrix;
     normals[i] = e.normal;
     recursions[i] = e.recursion;
     depths[i] = e.depth;
 }
-
+/*
+Read element into heap.
+*/
 element get(uint i) {
     element e;
     e.matrix = matrices[i];
@@ -145,12 +172,18 @@ element get(uint i) {
     return e;
 }
 
+/*
+Swap two elements on the heap.
+*/
 void heap_swap(uint a, uint b) {
     element e = get(a);
     set(a, get(b));
     set(b, e);
 }
 
+/*
+Perform insertion into the heap preserving the heap structure.
+*/
 void heap_insert(element e) {
     uint last = size;
 
@@ -171,6 +204,9 @@ void heap_insert(element e) {
     size++;
 }
 
+/*
+Take off the closest node from the heap preserving the heap structure.
+*/
 element heap_pop() {
     element e = get(0);
 
@@ -216,6 +252,9 @@ struct trace_result {
     vec3 p;
 };
 
+/*
+Trace fractal, calculating depth of intersection and accumulated normals.
+*/
 trace_result trace(vec3 from, vec3 direction) {
     trace_result result;
     result.i.depth_squared = 1e12;
@@ -253,7 +292,7 @@ trace_result trace(vec3 from, vec3 direction) {
                     child_from + child_direction * sqrt(i.depth_squared);
                 if (e.recursion + 5 > max_depth) {
                     // average normals
-                    // TODO: make efficient
+                    // reformulating it to not need the inverse matrix is slower
                     child.normal +=
                         normalize(position * inverse(mat3(child.matrix)));
                 }
@@ -275,7 +314,10 @@ trace_result trace(vec3 from, vec3 direction) {
 }
 
 /*
-Testing whether there is an intersection is cheap.
+Test whether there is an intersection without calculating depths and
+without sorting.
+Uses the heap as a stack, but that's ok because this function is not called
+simultaniously with trace.
 */
 bool shadow_trace(vec3 from, vec3 direction) {
     size = 1;
@@ -314,6 +356,7 @@ bool shadow_trace(vec3 from, vec3 direction) {
 }
 
 void main(void) {
+    // calculate ray parameters from screen position
     uvec2 position = gl_GlobalInvocationID.xy;
     vec3 from = (model_matrix * vec4(0, 0, 0, 1)).xyz;
     vec3 direction = (
@@ -322,16 +365,19 @@ void main(void) {
 
     float max_depth = 1e12;
 
-    // performing shadow_trace first is not worth it
+    // performing shadow_trace before trace is not worth it
 
     trace_result t = trace(from, direction);
 
     vec3 shade = vec3(1);
 
     if (t.i.depth_squared < max_depth) {
+        // fractal was hit, perform shading
         shade = material_color;
         mat3x4 inverse_matrix = projective_inverse(t.e.matrix);
 
+        // TODO: instead of inverse transforming the point one can forward
+        // transform the fractal
         vec3 position = vec4(t.p * 1.01, 1.0) * inverse_matrix;
 
         vec3 light_direction = normalize(light_position - position);
@@ -345,6 +391,7 @@ void main(void) {
         float lighting = 0;
 
         if (diffuse > 0) {
+            // surface is facing the light, perform shadow trace
             bool shadow = shadow_trace(
                 position,
                 light_position - position
@@ -357,12 +404,12 @@ void main(void) {
         }
 
         shade *= lighting + material_coefficients.z;
-
-        //shade = t.p * 0.5 + 0.5;
     }
 
+    // to visualize number of iterations
     //shade = vec3(min(float(steps), 20) / 20);
 
+    // gamma correction
     shade = pow(shade, vec3(1.0 / 2.2));
 
     imageStore(color, ivec2(position), vec4(shade, 0));

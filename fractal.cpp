@@ -8,6 +8,7 @@ using namespace glm;
 using namespace nlohmann;
 
 namespace glm {
+    // json calls this to deserialize vec3
     void from_json(const json& j, vec3& v) {
         v.x = j.at(0).get<float>();
         v.y = j.at(1).get<float>();

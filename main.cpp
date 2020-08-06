@@ -3,7 +3,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#define GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL // to use euler_angles
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -49,17 +49,16 @@ enum struct operation {
 
 ImGuiIO* io;
 
+// respond to mouse movement
 void cursor_position_callback(GLFWwindow*, double x, double y) {
     vec2 mouse_position(x, y);
     vec2 delta = mouse_position - previous_mouse_position;
     switch (current_operation) {
     case operation::rotate:
-    {
         rotation += delta * -0.005f;
         model_matrix = translate(
             eulerAngleYXZ(rotation.x, rotation.y, 0.f), vec3(0, 0, 4)
         );
-    }
         break;
     case operation::pan:
         break;
@@ -72,6 +71,7 @@ void cursor_position_callback(GLFWwindow*, double x, double y) {
     previous_mouse_position = mouse_position;
 }
 
+// respond to mouse button
 void mouse_button_callback(
     GLFWwindow* window, int button, int action, int
 ) {
@@ -103,6 +103,7 @@ void mouse_button_callback(
     }
 }
 
+// resize buffers and recalculate projection matrix when window is resized
 void window_size_callback(GLFWwindow*, int width, int height) {
     window_width = static_cast<unsigned int>(width);
     window_height = static_cast<unsigned int>(height);
@@ -126,6 +127,7 @@ void window_size_callback(GLFWwindow*, int width, int height) {
     );
 }
 
+// upload fractal parameters to GPU
 void set_fractal(fractal f) {
     auto maps_inverse_buffer = create_buffer<const mat3x4>(
         GL_SHADER_STORAGE_BUFFER, GL_STATIC_DRAW,
@@ -176,8 +178,6 @@ int main()
     io = &ImGui::GetIO();
     io->Fonts->AddFontFromFileTTF("fonts/Lato-Regular.ttf", 20.0f);
 
-    //fractal f("Sierpinski Triangle.json");
-
     trace_program = compile_program("trace.glsl", {});
     get_uniform_locations(
         trace_program, {
@@ -194,6 +194,7 @@ int main()
         }
     );
 
+    // first example fractal
     set_fractal(fractal("Sierpinski Tetrahedron.json"));
 
     glfwSetCursorPosCallback(window, &cursor_position_callback);
@@ -220,6 +221,7 @@ int main()
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // measure render time
         glBeginQuery(GL_TIME_ELAPSED, time_elapsed_query);
 
         glBindImageTexture(
@@ -231,6 +233,7 @@ int main()
             uniforms.model_matrix, 1, GL_FALSE, value_ptr(model_matrix)
         );
 
+        // dispatch enough work groups for the current resolution
         glDispatchCompute(
             (window_width - 1) / 8 + 1,
             (window_height - 1) / 4 + 1, 1
@@ -241,6 +244,7 @@ int main()
         glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
+        // compute shaders can't write to screen, so result has to be blitted
         glBlitFramebuffer(
             0, 0, window_width, window_height,
             0, 0, window_width, window_height,
@@ -275,12 +279,14 @@ int main()
         GLuint query_result;
         glGetQueryObjectuiv(time_elapsed_query, GL_QUERY_RESULT, &query_result);
 
-        float elapsed_time = query_result * 1e-9f;
+        // keep history of render times for plot
+        float elapsed_time = query_result * 1e-6f; // ns to ms
         static const unsigned profiling_history_size = 100;
         static float elapsed_time_history[profiling_history_size];
         static float elapsed_time_running_average = 1;
         static unsigned profiling_history_index = 0;
         elapsed_time_history[profiling_history_index] = elapsed_time;
+        // exponential running average for scaling the plot
         elapsed_time_running_average +=
             (elapsed_time - elapsed_time_running_average) * 0.1f;
         profiling_history_index =
@@ -290,7 +296,7 @@ int main()
         if (show_profiler_window)
         {
             ImGui::Begin("Profiler", &show_profiler_window);
-            ImGui::Text("avg: %.2f ms", elapsed_time_running_average * 1000);
+            ImGui::Text("avg: %.2f ms", elapsed_time_running_average);
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             // ImDrawList API uses screen coordinates!
             ImVec2 offset = ImGui::GetCursorScreenPos();

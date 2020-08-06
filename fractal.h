@@ -8,7 +8,9 @@ struct fractal {
     fractal(const char* filename);
     ~fractal();
 
+    // list of functions that represent the fractal
     ge1::span<glm::mat3x4> mappings;
+
     glm::vec3 light_position;
     glm::vec3 coefficients;
     glm::vec3 color;
